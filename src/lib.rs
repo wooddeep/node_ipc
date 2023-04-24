@@ -237,11 +237,6 @@ fn init_sema_map(worker_num: u32, oper: sema_oper) {
 
 #[napi]
 pub async fn master_init(worker_num: u32) {
-    // let logfile = std::fs::File::create(format!("node_ipc_{}.log", std::process::id())).unwrap();
-    // let config = Config::default();
-    // let file_logger = WriteLogger::new(LevelFilter::Info, config, logfile);
-    // CombinedLogger::init(vec![file_logger]).unwrap();
-
     unsafe {
         MAX_WORKER_NUM = worker_num;
         let shm_size = MAX_WORKER_NUM * MAX_WORKER_NUM * MSG_CELL_SIZE;
@@ -255,10 +250,10 @@ fn init_share_memory(worker_num: u32) {}
 
 #[napi]
 pub fn worker_init(worker_num: u32, index: u32) {
-    // let logfile = std::fs::File::create(format!("node_ipc_{}.log", std::process::id())).unwrap();
-    // let config = Config::default();
-    // let file_logger = WriteLogger::new(LevelFilter::Info, config, logfile);
-    // CombinedLogger::init(vec![file_logger]).unwrap();
+    let logfile = std::fs::File::create(format!("node_ipc.log")).unwrap();
+    let config = Config::default();
+    let file_logger = WriteLogger::new(LevelFilter::Info, config, logfile);
+    CombinedLogger::init(vec![file_logger]).unwrap();
 
     thread::spawn(move || {
         unsafe {
