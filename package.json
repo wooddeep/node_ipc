@@ -37,8 +37,8 @@
     "koa-router": "^12.0.0"
   },
   "optionalDependencies": {
-    "@wooddeep/node_ipc-win32-x64-msvc": "0.1.2",
-    "@wooddeep/node_ipc-darwin-x64": "0.1.2",
-    "@wooddeep/node_ipc-linux-x64-gnu": "0.1.2"
+    "@wooddeep/node_ipc-win32-x64-msvc": "0.1.3",
+    "@wooddeep/node_ipc-darwin-x64": "0.1.3",
+    "@wooddeep/node_ipc-linux-x64-gnu": "0.1.3"
   }
 }
