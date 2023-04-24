@@ -1,5 +1,5 @@
 # node_ipc
-ipc for nodejs base on share memory and semaphore!
+ipc for nodejs base on share memory and semaphore! [jump to github](https://github.com/wooddeep/node_ipc)
 
 # description
   The default IPC mechanism of Node.js does not support direct communication between worker processes, only communication between the master process and worker processes. Communication between worker processes requires intermediate transfer through the master process. The purpose of developing this project is to implement IPC communication between worker processes in Node.js cluster mode through napi-rs. IPC between processes is achieved through shared memory and semaphores. Currently, there are no open-source Node.js plugins available on the Internet, so I'm implementing one myself.  
@@ -191,7 +191,7 @@ class WsServer {
 module.exports = WsServer
 ```
 
-4. create a websocket test client file wsc.js, which establish websocket connection with wsd.js, and send data to websocket server periodically.
+4. create a websocket test client file wsc.js, which establish websocket connection with wsd.js, and send data to websocket server periodically. The data size should be less than 200 bytes!
 ```javascript
 const WebSocket = require('ws');
 var zlib = require('zlib');
