@@ -1,10 +1,8 @@
 const WebSocket = require('ws');
 var zlib = require('zlib');
 
-//报文
 const msg = { "groupId": "0", "cat": 0, "cmd": 0, "ani": 0, "pos": { "x": 0.0, "y": 0.0, "z": 0.0 }, "rot": { "x": 0.0, "y": 0.0, "z": 0.0 }, "id": "1" }
 
-// 输入为Buffer
 async function inflate(input) {
     var promise = new Promise((resolve) => {
         zlib.inflate(input, function (err, buf) {
@@ -14,17 +12,6 @@ async function inflate(input) {
 
     return promise
 }
-
-async function deflate(input) {
-    var promise = new Promise((resolve) => {
-        zlib.deflate(input, function (err, buf) {
-            resolve(buf)
-        });
-    })
-
-    return promise
-}
-
 
 class TestClient {
     constructor(url, groupId = '0', uid, gx = 0, gz = 0) {
@@ -167,11 +154,6 @@ function startTest() {
 
     console.log(groupId, userId)
 
-    //groupId = groupId == undefined ? groupId : "100"
-    //userId = userId == undefined ? userId : "100"
-
-    // var cli = new TestClient(`ws://127.0.0.1:6060/gopnv/game/sync?debug=true&AUTH=abc&id=100&name=100`)
-    //var cli = new TestClient(`wss://meta-meeting-test.migu.cn/test/game/sync?debug=true&AUTH=abc&id=100&name=100`, groupId, userId)
     var cli = new TestClient(`ws://127.0.0.1:${port}/test?debug=true&AUTH=abc&id=${userId}&name=${userId}`, groupId, userId)
 
     cli.init();
