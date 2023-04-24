@@ -31,10 +31,10 @@ pub fn sema_create(name: &str) -> HANDLE {
         )
     };
     if semaphore_handle == null_mut() {
-        println!("CreateSemaphoreW failed");
+        log::info!("CreateSemaphoreW failed");
     }
 
-    println!("Semaphore created");
+    log::info!("Semaphore created");
     return semaphore_handle;
 }
 
@@ -51,9 +51,9 @@ pub fn sema_open(name: &str) -> HANDLE {
         )
     };
     if semaphore_handle == null_mut() {
-        println!("OpenSemaphoreW failed");
+        log::info!("OpenSemaphoreW failed");
     }
-    println!("Semaphore opened");
+    log::info!("Semaphore opened");
     return semaphore_handle;
 }
 
@@ -68,7 +68,7 @@ pub fn sema_require(semaphore_handle: HANDLE) {
             // do something
         }
         _ => {
-            println!("WaitForSingleObject failed");
+            log::info!("WaitForSingleObject failed");
         }
     }
 }
@@ -83,7 +83,7 @@ pub fn sema_release(semaphore_handle: HANDLE) {
         )
     };
     if release_result == 0 {
-        println!("ReleaseSemaphore failed");
+        log::info!("ReleaseSemaphore failed");
     }
     //println!("Semaphore ownership released");
 }
@@ -114,11 +114,11 @@ fn shm_read_demo(map: LPVOID) {
     };
 
     unsafe {
-        println!("[0] read last error: {}", GetLastError());
+        log::info!("[0] read last error: {}", GetLastError());
     }
 
     if handle.is_null() {
-        panic!("OpenFileMappingW failed");
+        log::info!("OpenFileMappingW failed");
     }
 
     let map = unsafe {
@@ -132,7 +132,7 @@ fn shm_read_demo(map: LPVOID) {
     };
 
     if map.is_null() {
-        panic!("MapViewOfFile failed");
+        log::info!("MapViewOfFile failed");
     }
 
     let buffer = unsafe {
@@ -151,7 +151,7 @@ fn shm_read_demo(map: LPVOID) {
 pub fn do_shm_write(map: LPVOID, offset: u32, buffer: &[u8]) {
     let data_ptr = buffer.as_ptr() as LPVOID;
     if map.is_null() {
-        panic!("MapViewOfFile failed");
+        log::info!("MapViewOfFile failed");
     }
 
     unsafe {
@@ -163,7 +163,7 @@ pub fn do_shm_write(map: LPVOID, offset: u32, buffer: &[u8]) {
 // data_type: 0 ~ 返回字符串; 1 ~ 返回数组
 pub fn do_shm_read_str(map: LPVOID, offset: u32, size: u32) -> String {
     if map.is_null() {
-        panic!("map is null");
+        log::info!("map is null");
     }
 
     let buffer = unsafe {
@@ -183,9 +183,8 @@ pub fn do_shm_read_str(map: LPVOID, offset: u32, size: u32) -> String {
 }
 
 pub fn do_shm_read_buf(map: LPVOID, offset: u32, size: u32) -> &'static [u8] {
-
     if map.is_null() {
-        panic!("map is null");
+        log::info!("map is null");
     }
 
     unsafe {
@@ -195,7 +194,7 @@ pub fn do_shm_read_buf(map: LPVOID, offset: u32, size: u32) -> &'static [u8] {
     }
 }
 
-pub fn shm_init(size: u32) -> (LPVOID, HANDLE) {
+pub fn shm_create(size: u32) -> (LPVOID, HANDLE) {
     let mapping_name = "RustMapping";
     let mapping_size = size.try_into().unwrap();
 
@@ -211,7 +210,7 @@ pub fn shm_init(size: u32) -> (LPVOID, HANDLE) {
     };
 
     if handle.is_null() {
-        panic!("CreateFileMappingW failed");
+        log::info!("CreateFileMappingW failed");
     }
 
     let map = unsafe {
@@ -225,7 +224,40 @@ pub fn shm_init(size: u32) -> (LPVOID, HANDLE) {
     };
 
     if map.is_null() {
-        panic!("MapViewOfFile failed");
+        log::info!("MapViewOfFile failed");
+    }
+
+    return (map, handle);
+}
+
+pub fn shm_open(size: u32) -> (LPVOID, HANDLE) {
+    let mapping_name = "RustMapping";
+    let mapping_size: DWORD = size.try_into().unwrap();
+
+    let handle = unsafe {
+        OpenFileMappingW(
+            FILE_MAP_ALL_ACCESS,
+            0,
+            mapping_name.encode_utf16().collect::<Vec<_>>().as_ptr(),
+        )
+    };
+
+    if handle.is_null() {
+        log::info!("OpenFileMappingW failed");
+    }
+
+    let map = unsafe {
+        MapViewOfFile(
+            handle,
+            FILE_MAP_ALL_ACCESS,
+            0,
+            0,
+            mapping_size as usize,
+        )
+    };
+
+    if map.is_null() {
+        log::info!("MapViewOfFile failed");
     }
 
     return (map, handle);
