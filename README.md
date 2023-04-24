@@ -364,13 +364,13 @@ node test.js
 ```
 6. start two websocket client:
 ```bash
-node src\wsc.js 100 100 # client id: 100
-node src\wsc.js 100 101 # client id: 101
+node wsc.js 100 100 # client id: 100
+node wsc.js 100 101 # client id: 101
 ```
 7. watch the two clients' output:
 - client 100, get the client 101'1 message from other worker process:
 ```
-$ node src\wsc.js 100 100
+$ node wsc.js 100 100
 100 100
 connecting to server % ws://127.0.0.1:5050/test?debug=true&AUTH=abc&id=100&name=100
 connected to server % ws://127.0.0.1:5050/test?debug=true&AUTH=abc&id=100&name=100
@@ -383,8 +383,7 @@ connected to server % ws://127.0.0.1:5050/test?debug=true&AUTH=abc&id=100&name=1
 ```
 - client 101, get the client 100'1 message from other worker process:
 ```
-$ node src\wsc.js 100 100
-$  node src\wsc.js 100 101
+$  node wsc.js 100 101
 100 101
 connecting to server % ws://127.0.0.1:5050/test?debug=true&AUTH=abc&id=101&name=101
 connected to server % ws://127.0.0.1:5050/test?debug=true&AUTH=abc&id=101&name=101
