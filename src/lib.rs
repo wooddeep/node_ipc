@@ -120,7 +120,7 @@ pub async fn test_shm_write(input: String) {
                 continue;
             }
 
-            println!("## [{}] write sema require [{}][{}]", std::process::id(), i, j);
+            log::info!("## [{}] write sema require [{}][{}]", std::process::id(), i, j);
             ipc::sema_require(NOTIFY_SEMA_MAP[i as usize][j as usize]);
 
             // get the head & tail index
@@ -133,12 +133,12 @@ pub async fn test_shm_write(input: String) {
 
             tail_index = tail_index + 1; // tail inc
 
-            println!("## [{}] write tail_index: {}, offset:{}, tail offset:{}", std::process::id(), tail_index, offset, meta_offset + 4);
+            log::info!("## [{}] write tail_index: {}, offset:{}, tail offset:{}", std::process::id(), tail_index, offset, meta_offset + 4);
 
             // write back the tail index
             set_shm_u32(tail_index, meta_offset + 4);
 
-            println!("## [{}] write sema release [{}][{}]", std::process::id(), i, j);
+            log::info!("## [{}] write sema release [{}][{}]", std::process::id(), i, j);
             ipc::sema_release(NOTIFY_SEMA_MAP[i as usize][j as usize]);
         }
     }
@@ -159,7 +159,7 @@ pub fn test_shm_read() -> String {
                     continue;
                 }
 
-                println!("## [{}] read sema require [{}][{}]", std::process::id(), j, i);
+                log::info!("## [{}] read sema require [{}][{}]", std::process::id(), j, i);
                 ipc::sema_require(NOTIFY_SEMA_MAP[j as usize][i as usize]);
                 // get the head & tail index
                 let meta_offset = meta_offset(j, i);
@@ -167,11 +167,11 @@ pub fn test_shm_read() -> String {
                 let mut head_index = get_shm_u32(meta_offset);
                 let mut tail_index = get_shm_u32(meta_offset + 4);
 
-                println!("## [{}] read[0]: reader head_index: {}, tail_index: {}, head offset:{}, tail offset:{}", std::process::id(), head_index, tail_index, meta_offset, meta_offset + 4);
+                log::info!("## [{}] read[0]: reader head_index: {}, tail_index: {}, head offset:{}, tail offset:{}", std::process::id(), head_index, tail_index, meta_offset, meta_offset + 4);
                 for k in head_index..tail_index {
                     let offset = msg_offset(j, i, k); // read from head
                     let data = ipc::do_shm_read_str(MAP_DESC.0, offset, MAX_MSG_LEN); // read
-                    println!("## [{}] read[1] head_index: {}, tail_index: {}, offset: {}", std::process::id(), head_index, tail_index, offset);
+                    log::info!("## [{}] read[1] head_index: {}, tail_index: {}, offset: {}", std::process::id(), head_index, tail_index, offset);
                     let empty: [u8; 200] = [0; 200]; // msg length: 200 byts equal to MAX_MSG_LEN
                     ipc::do_shm_write(MAP_DESC.0, offset, &empty); // clear
                     builder.append(data);
@@ -185,7 +185,7 @@ pub fn test_shm_read() -> String {
                 set_shm_u32(head_index, meta_offset);
                 set_shm_u32(tail_index, meta_offset + 4);
 
-                println!("## [{}] read sema release [{}][{}]", std::process::id(), j, i);
+                log::info!("## [{}] read sema release [{}][{}]", std::process::id(), j, i);
                 ipc::sema_release(NOTIFY_SEMA_MAP[j as usize][i as usize]);
             }
 
@@ -237,11 +237,10 @@ fn init_sema_map(worker_num: u32, oper: sema_oper) {
 
 #[napi]
 pub async fn master_init(worker_num: u32) {
-    // let logfile = std::fs::File::create("node_ipc.log").unwrap();
+    // let logfile = std::fs::File::create(format!("node_ipc_{}.log", std::process::id())).unwrap();
     // let config = Config::default();
     // let file_logger = WriteLogger::new(LevelFilter::Info, config, logfile);
     // CombinedLogger::init(vec![file_logger]).unwrap();
-    //log::info!("Hello, log!");
 
     unsafe {
         MAX_WORKER_NUM = worker_num;
@@ -256,7 +255,7 @@ fn init_share_memory(worker_num: u32) {}
 
 #[napi]
 pub fn worker_init(worker_num: u32, index: u32) {
-    // let logfile = std::fs::File::create("node_ipc.log").unwrap();
+    // let logfile = std::fs::File::create(format!("node_ipc_{}.log", std::process::id())).unwrap();
     // let config = Config::default();
     // let file_logger = WriteLogger::new(LevelFilter::Info, config, logfile);
     // CombinedLogger::init(vec![file_logger]).unwrap();
@@ -297,7 +296,7 @@ pub fn send_data(index: u32, data: Buffer, n: u32) {
         std::str::from_utf8_unchecked(slice)
     };
 
-    println!("data: {}", buffer);
+    log::info!("data: {}", buffer);
 }
 
 #[napi(ts_args_type = "callback: (result: string) => void")]
@@ -335,7 +334,7 @@ pub async fn call_node_func() -> Result<u32> {
 }
 
 fn clearup(env: Env) {
-    println!("#shut down!!")
+    log::info!("#shut down!!")
 }
 
 #[napi]
