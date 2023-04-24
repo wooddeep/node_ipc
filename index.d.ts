@@ -12,6 +12,6 @@ export function masterInit(workerNum: number): Promise<void>
 export function workerInit(workerNum: number, index: number): void
 export function processExit(): void
 export function sendData(index: number, data: Buffer, n: number): void
-export function callSafeFunc(callback: (...args: any[]) => any): void
+export function callSafeFunc(callback: (result: string) => void): void
 export function callNodeFunc(): Promise<number>
 export function init(): void

@@ -3,7 +3,9 @@ const Router = require('koa-router')
 const Koa = require('koa')
 const bodyParser = require('koa-bodyparser')
 const backend = require("../index.js")
-const {initProcInfo, runServer, testShmWrite, testShmRead, printThreadId, testShmWriteThread, callback} = require("../index");
+const {initProcInfo, runServer, testShmWrite, testShmRead, printThreadId, testShmWriteThread, callback,
+    callThreadsafeFunction2
+} = require("../index");
 
 const wsd = require("./wsd")
 const events = require("events")
@@ -96,13 +98,14 @@ if (cluster.isMaster) { // main process
     backend.workerInit(child_proc_num, Number.parseInt(process.env["WORKER_INDEX"]))
 
     const emitter = new events.EventEmitter();
-    backend.callSafeFunc(async () => {
-        let data = await backend.testShmRead();
+    backend.callSafeFunc(async (data) => {
         if (data.length > 2) {
-            //console.log(`## process id: ${process.pid}; data.length = ${data.length}, data = ${data}, time = ${new Date()}`)
+            console.log(`## process id: ${process.pid}; data.length = ${data.length}, data = ${data}, time = ${new Date()}`)
             emitter.emit("peer", data)
         }
     });
+
+    //backend.callThreadsafeFunction2(result => {console.log(`result: ${result}`)});
 
     process.WORKER_INDEX = process.env["WORKER_INDEX"]
     console.log("WORKER_INDEX", process.env["WORKER_INDEX"])

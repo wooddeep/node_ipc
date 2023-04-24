@@ -7,6 +7,7 @@ use std::path::Path;
 use std::process;
 use std::ptr;
 use std::ptr::null_mut;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::channel;
 use std::thread;
 use std::time;
@@ -16,6 +17,7 @@ use napi::{bindgen_prelude::*, JsNull, JsString, JsUnknown, threadsafe_function:
 use napi::{JsFunction, Result};
 use napi::bindgen_prelude::*;
 use napi::Env;
+use napi::threadsafe_function::ThreadSafeCallContext;
 use serde::{Deserialize, Serialize};
 use serde::de::Unexpected::Option;
 use tokio::task;
@@ -32,7 +34,6 @@ mod sb;
 // https://napi.rs/docs/concepts/async-task
 // https://napi.rs/docs/concepts/async-fn
 // https://napi.rs/docs/compat-mode/concepts/tokio
-
 // https://docs.rs/interprocess/latest/interprocess/os/windows/named_pipe/enum.PipeDirection.html
 
 #[cfg(target_os = "windows")]
@@ -51,7 +52,9 @@ static mut MAX_WORKER_NUM: u32 = 0;
 // sizeof(head_index) + sizeof(tail_index)
 static MSG_CELL_META_SIZE: u32 = 8;
 static MSG_CELL_SIZE: u32 = MSG_CELL_META_SIZE + MAX_MSG_CNT_PER_CELL * MAX_MSG_LEN;
+
 static mut WORKER_INDEX: u32 = 0;
+static mut ready: AtomicBool = AtomicBool::new(false);
 
 #[napi]
 pub async fn test_sema_release() {
@@ -145,12 +148,10 @@ pub fn test_shm_read() -> String {
 
             let i = WORKER_INDEX; // reader index
 
-
             for j in 0..MAX_WORKER_NUM { // writer index
                 if i == j {
                     continue;
                 }
-
 
                 ipc::sema_require(NOTIFY_SEMA_MAP[j as usize][i as usize]);
                 // get the head & tail index
@@ -231,6 +232,7 @@ pub async fn master_init(worker_num: u32) {
         let shm_size = MAX_WORKER_NUM * MAX_WORKER_NUM * MSG_CELL_SIZE;
         MAP_DESC = ipc::shm_init(shm_size);
         init_sema_map(worker_num, sema_oper::CREATE);
+        ready.store(true, Ordering::SeqCst);
     }
 }
 
@@ -245,6 +247,7 @@ pub fn worker_init(worker_num: u32, index: u32) {
             let shm_size = MAX_WORKER_NUM * MAX_WORKER_NUM * MSG_CELL_SIZE;
             MAP_DESC = ipc::shm_init(shm_size);
             init_sema_map(worker_num, sema_oper::OPEN);
+            ready.store(true, Ordering::SeqCst);
         }
     });
 }
@@ -276,22 +279,23 @@ pub fn send_data(index: u32, data: Buffer, n: u32) {
     println!("data: {}", buffer);
 }
 
-
-#[napi]
+#[napi(ts_args_type = "callback: (result: string) => void")]
 pub fn call_safe_func(callback: JsFunction) -> Result<()> {
-    let tsfn: ThreadsafeFunction<u32, ErrorStrategy::CalleeHandled> = callback
-        .create_threadsafe_function(0, |ctx| {
-            let object = ctx.env.create_string("hello world!").unwrap();
-            Ok(vec![object])
+    let tsfn: ThreadsafeFunction<String, ErrorStrategy::Fatal> = callback
+        .create_threadsafe_function(0, |ctx: ThreadSafeCallContext<String>| {
+            let data = ctx.env.create_string(ctx.value.as_str());
+            data.map(|v| vec![v])
         })?;
 
     let one_millis = time::Duration::from_millis(10);
-    let tsfn = tsfn.clone();
-
     thread::spawn(move || {
         loop {
             unsafe {
-                tsfn.call(Ok(0), ThreadsafeFunctionCallMode::NonBlocking);
+                let inited = ready.load(Ordering::SeqCst);
+                if inited {
+                    let data = test_shm_read();
+                    tsfn.call(data, ThreadsafeFunctionCallMode::NonBlocking);
+                }
                 thread::sleep(one_millis);
             }
         }
