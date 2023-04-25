@@ -6,16 +6,220 @@ use std::ptr::null_mut;
 
 use futures::StreamExt as _;
 use napi::{CallContext, JsNull, JsNumber};
+
+#[cfg(target_os = "windows")]
 use winapi::shared::minwindef::{DWORD, FALSE, TRUE};
+#[cfg(target_os = "windows")]
 use winapi::shared::minwindef::LPVOID;
+#[cfg(target_os = "windows")]
 use winapi::um::errhandlingapi::GetLastError;
+#[cfg(target_os = "windows")]
 use winapi::um::handleapi::{CloseHandle, INVALID_HANDLE_VALUE};
+#[cfg(target_os = "windows")]
 use winapi::um::memoryapi::{CreateFileMappingW, FILE_MAP_ALL_ACCESS, MapViewOfFile, OpenFileMappingW, UnmapViewOfFile};
+#[cfg(target_os = "windows")]
 use winapi::um::synchapi::{CreateSemaphoreW, OpenSemaphoreW, ReleaseSemaphore, WaitForSingleObject};
+#[cfg(target_os = "windows")]
 use winapi::um::winbase::WAIT_OBJECT_0;
+#[cfg(target_os = "windows")]
 use winapi::um::winnt::SEMAPHORE_ALL_ACCESS;
+#[cfg(target_os = "windows")]
 use winapi::um::winnt::PAGE_READWRITE;
+#[cfg(target_os = "windows")]
 use winapi::um::winnt::HANDLE;
+
+pub enum Operator {
+    CREATE,
+    OPEN,
+}
+
+pub trait AbsShm {
+    fn create(&mut self, name: &str, size: u32);
+    fn open(&mut self, name: &str, size: u32);
+    fn close(&self);
+    fn read_buf(&self, offset: u32, size: u32) -> Option<&'static [u8]>;
+    fn shm_write(&self, offset: u32, buffer: &[u8]);
+    fn read_str(&self, offset: u32, size: u32) -> String;
+    fn clear(&self);
+}
+
+pub struct WinShm {
+    handler: (LPVOID, HANDLE),
+}
+
+pub struct LinShm {
+
+}
+
+impl AbsShm for WinShm {
+    fn create(&mut self, name: &str, size: u32) {
+        let handler = shm_create(size);
+        self.handler = handler;
+    }
+
+    fn open(&mut self, name: &str, size: u32) {
+        let handler = shm_open(size);
+        self.handler = handler
+    }
+
+    fn close(&self) {
+        shm_clearup(self.handler);
+    }
+
+    fn read_buf(&self, offset: u32, size: u32) -> Option<&'static [u8]> {
+        let data = do_shm_read_buf(self.handler.0, offset, size);
+        Some(data)
+    }
+
+    fn shm_write(&self, offset: u32, buffer: &[u8]) {
+        do_shm_write(self.handler.0, offset, buffer);
+    }
+
+    fn read_str(&self, offset: u32, size: u32) -> String {
+        return do_shm_read_str(self.handler.0, offset, size);
+    }
+
+    fn clear(&self) {
+        shm_clearup(self.handler);
+    }
+}
+
+impl AbsShm for LinShm {
+    fn create(&mut self, name: &str, size: u32) {
+        todo!()
+    }
+
+    fn open(&mut self, name: &str, size: u32) {
+        todo!()
+    }
+
+    fn close(&self) {
+        todo!()
+    }
+
+    fn read_buf(&self, offset: u32, size: u32) -> Option<&'static [u8]> {
+        None
+    }
+
+    fn shm_write(&self, offset: u32, buffer: &[u8]) {
+
+    }
+
+    fn read_str(&self, offset: u32, size: u32) -> String {
+        return String::from("");
+    }
+
+    fn clear(&self) {
+
+    }
+}
+
+pub fn abs_shm_create(name: &str, size: u32) -> impl AbsShm {
+    #[cfg(target_os = "windows")] {
+        let mut shm = WinShm { handler: (ptr::null_mut(), ptr::null_mut()) };
+        shm.create(name, size);
+        shm
+    }
+
+    #[cfg(target_os = "linux")] {
+        None::<LinShm>
+    }
+}
+
+pub fn abs_shm_open(name: &str, size: u32) -> impl AbsShm {
+    #[cfg(target_os = "windows")] {
+        let mut shm = WinShm { handler: (ptr::null_mut(), ptr::null_mut()) };
+        shm.open(name, size);
+        shm
+    }
+
+    #[cfg(target_os = "linux")] {
+        None::<LinShm>
+    }
+}
+
+pub trait AbsSema {
+    fn create(&mut self, name: &str);
+    fn open(&mut self, name: &str);
+    fn close(&self);
+    fn require(&self);
+    fn release(&self);
+}
+
+pub struct WinSema {
+    handler: HANDLE,
+}
+
+pub struct LinSema {
+
+}
+
+impl AbsSema for WinSema {
+    fn create(&mut self, name: &str) {
+        sema_create(name);
+    }
+
+    fn open(&mut self, name: &str) {
+        sema_open(name);
+    }
+
+    fn close(&self) {
+        sema_close(self.handler);
+    }
+
+    fn require(&self) {
+        sema_require(self.handler);
+    }
+
+    fn release(&self) {
+        sema_release(self.handler);
+    }
+}
+
+impl AbsSema for LinSema {
+    fn create(&mut self, name: &str) {
+        todo!()
+    }
+
+    fn open(&mut self, name: &str) {
+        todo!()
+    }
+
+    fn close(&self) {
+        todo!()
+    }
+
+    fn require(&self) {
+
+    }
+
+    fn release(&self) {
+    }
+}
+
+pub fn abs_sema_create(name: &str) -> impl AbsSema {
+    #[cfg(target_os = "windows")] {
+        let mut sema = WinSema { handler: ptr::null_mut() };
+        sema.create(name);
+        sema
+    }
+
+    #[cfg(target_os = "linux")] {
+        None::<WinShm>
+    }
+}
+
+pub fn abs_sema_open(name: &str) -> impl AbsSema {
+    #[cfg(target_os = "windows")] {
+        let mut sema = WinSema { handler: ptr::null_mut() };
+        sema.open(name);
+        sema
+    }
+
+    #[cfg(target_os = "linux")] {
+        None::<WinShm>
+    }
+}
 
 pub fn sema_create(name: &str) -> HANDLE {
     // 命名信号量名

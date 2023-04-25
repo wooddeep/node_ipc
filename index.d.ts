@@ -7,7 +7,6 @@ export function testSemaRelease(): Promise<void>
 export function testSemaRequire(): Promise<void>
 export function testShmWrite(input: string): Promise<void>
 export function testShmRead(): string
-export function show(): number
 export function masterInit(workerNum: number): Promise<void>
 export function workerInit(workerNum: number, index: number): void
 export function processExit(): void
