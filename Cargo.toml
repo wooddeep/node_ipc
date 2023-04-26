@@ -35,6 +35,7 @@ simplelog = "0.7"
 #windows = { version = "0.21.0", features = ["win32-process"] }
 
 libc = "0.2"
+regex = "*"
 
 [build-dependencies]
 napi-build = "2.0.1"

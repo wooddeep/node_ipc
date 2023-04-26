@@ -23,12 +23,6 @@ use napi::threadsafe_function::ThreadSafeCallContext;
 
 use simplelog::{CombinedLogger, Config, SimpleLogger, TerminalMode, TermLogger, WriteLogger};
 use tokio::task;
-#[cfg(target_os = "windows")]
-use winapi::ctypes::c_ulong;
-#[cfg(target_os = "windows")]
-use winapi::shared::minwindef::LPVOID;
-#[cfg(target_os = "windows")]
-use winapi::um::winnt::HANDLE;
 
 use sb::Builder;
 use crate::ipc::AbsShm;
@@ -43,110 +37,6 @@ mod sb;
 // https://napi.rs/docs/compat-mode/concepts/tokio
 // https://docs.rs/interprocess/latest/interprocess/os/windows/named_pipe/enum.PipeDirection.html
 
-/*
-use napi::{CallContext, JsObject, JsString, Result};
-
-// 共享内存的大小
-const SHM_SIZE: usize = 1024;
-
-#[cfg(target_os = "linux")]
-use libc::{c_void, IPC_CREAT, IPC_EXCL, SHM_R | SHM_W, shmget, shmat, shmdt, shmctl};
-
-#[cfg(target_os = "linux")]
-use std::ffi::CString;
-
-// 创建一个共享内存并返回其 id
-#[cfg(target_os = "linux")]
-fn create_shared_memory(key: &str) -> Result<i32> {
-    let key_cstring = CString::new(key).unwrap();
-
-    let shm_id = unsafe {
-        shmget(
-            key_cstring.as_ptr() as i32,
-            SHM_SIZE,
-            IPC_CREAT | IPC_EXCL | SHM_R | SHM_W,
-        )
-    };
-
-    if shm_id == -1 {
-        Err(Error::new(
-            Status::GenericFailure,
-            "Failed to create shared memory",
-        ))
-    } else {
-        Ok(shm_id)
-    }
-}
-
-// 连接共享内存并返回指向共享内存的指针
-#[cfg(target_os = "linux")]
-fn attach_shared_memory(shm_id: i32) -> Result<*mut c_void> {
-    let shm_ptr = unsafe { shmat(shm_id, std::ptr::null(), 0) };
-
-    if shm_ptr == (0 as *mut c_void) {
-        Err(Error::new(
-            Status::GenericFailure,
-            "Failed to attach shared memory",
-        ))
-    } else {
-        Ok(shm_ptr)
-    }
-}
-
-// 断开共享内存连接
-#[cfg(target_os = "linux")]
-fn detach_shared_memory(shm_ptr: *mut c_void) -> Result<()> {
-    let status = unsafe { shmdt(shm_ptr) };
-
-    if status == -1 {
-        Err(Error::new(
-            Status::GenericFailure,
-            "Failed to detach shared memory",
-        ))
-    } else {
-        Ok(())
-    }
-}
-
-// 删除共享内存
-#[cfg(target_os = "linux")]
-fn delete_shared_memory(shm_id: i32) -> Result<()> {
-    let buf = libc::shmid_ds { shm_perm: libc::ipc_perm { __key: 0, mode: 0, uid: 0, gid: 0 } };
-
-    let status = unsafe { shmctl(shm_id, libc::IPC_RMID, &mut buf) };
-
-    if status == -1 {
-        Err(Error::new(
-            Status::GenericFailure,
-            "Failed to delete shared memory",
-        ))
-    } else {
-        Ok(())
-    }
-}
-
-#[js_function(1)]
-pub fn create_shared_memory(ctx: CallContext) -> Result<JsString> {
-    let key = ctx.get::<JsString>(0)?.into_utf8()?;
-
-    let shm_id = create_shared_memory(key.as_str()?)?;
-    let shm_ptr = attach_shared_memory(shm_id)?;
-
-    // 设置共享内存的内容为 "Hello, world!"
-    let hello_world = "Hello, world!";
-    unsafe {
-        let dest = shm_ptr as *mut u8;
-        std::ptr::copy_nonoverlapping(hello_world.as_ptr(), dest, hello_world.len());
-    }
-
-    detach_shared_memory(shm_ptr)?;
-
-    Ok(ctx.env.create_string("Shared memory created")?)
-}
-
-#[js_function(1)]
-pub fn read_shared_memory(ctx: CallContext) -> Result
-*/
 
 static SEMA_NAME: &str = "test";
 static mut shm_handler: Option<Box<dyn ipc::AbsShm>> = None;
@@ -167,16 +57,14 @@ static mut ready: AtomicBool = AtomicBool::new(false);
 #[napi]
 pub async fn test_sema_release() {
     task::spawn_blocking(move || {
-        unsafe {
-        }
+        unsafe {}
     }).await.unwrap();
 }
 
 #[napi]
 pub async fn test_sema_require() {
     task::spawn_blocking(move || {
-        unsafe {
-        }
+        unsafe {}
     }).await.unwrap();
 }
 
@@ -316,9 +204,9 @@ fn init_sema_map(worker_num: u32, ot: u32) {
                         let sema = ipc::abs_sema_create(&format!("{}-{}-{}", SEMA_NAME, i, j));
                         row.push(Some(Box::new(sema)));
                     }
-                    if ot ==1  {
+                    if ot == 1 {
                         let sema = ipc::abs_sema_open(&format!("{}-{}-{}", SEMA_NAME, i, j));
-                        row.push(Some( Box::new(sema)));
+                        row.push(Some(Box::new(sema)));
                     }
                 } else {
                     row.push(None);
@@ -364,12 +252,10 @@ pub fn worker_init(worker_num: u32, index: u32) {
     });
 }
 
-
-
 #[napi]
 pub fn process_exit() {
-    #[cfg(target_os = "windows")] unsafe {
-        shm_handler.as_ref().unwrap().clear();
+    unsafe {
+        shm_handler.as_ref().unwrap().close();
         for i in 0..MAX_WORKER_NUM {
             for j in 0..MAX_WORKER_NUM {
                 if i != j {
@@ -432,7 +318,6 @@ fn clearup(env: Env) {
 #[napi]
 pub fn init(mut env: Env) -> Result<()> {
     env.add_env_cleanup_hook(env, clearup);
-    //env.add_async_cleanup_hook(env, clearup);
     Ok(())
 }
 

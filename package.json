@@ -1,9 +1,10 @@
 {
   "name": "@wooddeep/node_ipc",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "main": "index.js",
   "bin": {
-    "winaddon": "./node_ipc.win32-x64-msvc.node"
+    "winaddon": "./node_ipc.win32-x64-msvc.node",
+    "linaddon": "./node_ipc.linux-x64-gnu.node"
   },
   "types": "index.d.ts",
   "napi": {
