@@ -252,16 +252,15 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { testSemaRelease, testSemaRequire, testShmWrite, testShmRead, masterInit, workerInit, processExit, sendData, callSafeFunc, callNodeFunc, init } = nativeBinding
+const { testSemaRelease, testSemaRequire, broadcast, masterInit, workerInit, processExit, sendData, regNodeFunc, callNodeFunc, init } = nativeBinding
 
 module.exports.testSemaRelease = testSemaRelease
 module.exports.testSemaRequire = testSemaRequire
-module.exports.testShmWrite = testShmWrite
-module.exports.testShmRead = testShmRead
+module.exports.broadcast = broadcast
 module.exports.masterInit = masterInit
 module.exports.workerInit = workerInit
 module.exports.processExit = processExit
 module.exports.sendData = sendData
-module.exports.callSafeFunc = callSafeFunc
+module.exports.regNodeFunc = regNodeFunc
 module.exports.callNodeFunc = callNodeFunc
 module.exports.init = init

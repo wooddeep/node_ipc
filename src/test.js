@@ -3,10 +3,6 @@ const Router = require('koa-router')
 const Koa = require('koa')
 const bodyParser = require('koa-bodyparser')
 const backend = require("../index.js")
-const {initProcInfo, runServer, testShmWrite, testShmRead, printThreadId, testShmWriteThread, callback,
-    callThreadsafeFunction2
-} = require("../index");
-
 const wsd = require("./wsd")
 const events = require("events")
 
@@ -50,29 +46,6 @@ process.on("beforeExit", (code) => {
     backend.processExit()
 })
 
-function delay(secs) {
-    let promise = new Promise((resolve) => {
-        setTimeout(() => resolve(true), 1000 * secs)
-    });
-    return promise;
-}
-
-function do_sub() {
-    subscribe(async () => {
-        let data = await backend.testShmRead();
-        if (data.length > 2) {
-            console.log(`## process id: ${process.pid}; data.length = ${data.length}, data = ${data}, time = ${new Date()}`)
-        }
-    });
-}
-
-function subscribe(callback) {
-    backend.callNodeFunc().then((data) => {
-        callback(data)
-        subscribe(callback)
-    })
-}
-
 if (cluster.isMaster) { // main process
     cluster.schedulingPolicy = cluster.SCHED_RR;
     backend.masterInit(child_proc_num)
@@ -98,14 +71,12 @@ if (cluster.isMaster) { // main process
     backend.workerInit(child_proc_num, Number.parseInt(process.env["WORKER_INDEX"]))
 
     const emitter = new events.EventEmitter();
-    backend.callSafeFunc(async (data) => {
+    backend.regNodeFunc(async (data) => {
         if (data.length > 2) {
             console.log(`## process id: ${process.pid}; data.length = ${data.length}, data = ${data}, time = ${new Date()}`)
             emitter.emit("peer", data)
         }
     });
-
-    //backend.callThreadsafeFunction2(result => {console.log(`result: ${result}`)});
 
     process.WORKER_INDEX = process.env["WORKER_INDEX"]
     console.log("WORKER_INDEX", process.env["WORKER_INDEX"])
@@ -113,7 +84,5 @@ if (cluster.isMaster) { // main process
     const websockd = new wsd(emitter);
 
     websockd.start(emitter);
-
-
 }
 

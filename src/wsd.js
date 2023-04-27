@@ -1,5 +1,4 @@
 const WebSocket = require('ws')
-const {initProcInfo, runServer, testShmWrite, testShmRead, printThreadId, testShmWriteThread, callback} = require("../index");
 const backend = require("../index.js");
 
 class WsServer {
@@ -12,14 +11,12 @@ class WsServer {
             this.connMap.forEach((value, socket) => {
                 socket.send(msg)
             })
-
         })
     }
 
     async onMessage(message, socket) {
         let data = JSON.parse(message.toString());
-        //console.log(`## onMessage: ${JSON.stringify(data)}`)
-        await backend.testShmWrite(JSON.stringify(JSON.stringify(data)))
+        await backend.broadcast(JSON.stringify(JSON.stringify(data)))
     }
 
     onClose(socket) {
@@ -39,7 +36,6 @@ class WsServer {
         socket.on("close", () => this.onClose(socket));
         socket.on("error", (error) => this.onError(socket, error));
         this.connMap.set(socket, true)
-
     }
 
     start() {

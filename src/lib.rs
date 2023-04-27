@@ -100,8 +100,9 @@ fn meta_offset(writer_index: u32, reader_index: u32) -> u32 {
     }
 }
 
+// broadcast message to the brothers
 #[napi]
-pub async fn test_shm_write(input: String) {
+pub async fn broadcast(input: String) {
     unsafe {
         let i = WORKER_INDEX; // writer index
 
@@ -134,9 +135,7 @@ pub async fn test_shm_write(input: String) {
     }
 }
 
-
-#[napi]
-pub fn test_shm_read() -> String {
+pub fn proc_shm_read() -> String {
     let out =
         unsafe {
             let mut builder = Builder::default();
@@ -278,7 +277,7 @@ pub fn send_data(index: u32, data: Buffer, n: u32) {
 }
 
 #[napi(ts_args_type = "callback: (result: string) => void")]
-pub fn call_safe_func(callback: JsFunction) -> Result<()> {
+pub fn reg_node_func(callback: JsFunction) -> Result<()> {
     let tsfn: ThreadsafeFunction<String, ErrorStrategy::Fatal> = callback
         .create_threadsafe_function(0, |ctx: ThreadSafeCallContext<String>| {
             let data = ctx.env.create_string(ctx.value.as_str());
@@ -291,7 +290,7 @@ pub fn call_safe_func(callback: JsFunction) -> Result<()> {
             unsafe {
                 let inited = ready.load(Ordering::SeqCst);
                 if inited {
-                    let data = test_shm_read();
+                    let data = proc_shm_read();
                     tsfn.call(data, ThreadsafeFunctionCallMode::NonBlocking);
                 }
                 thread::sleep(delay);
