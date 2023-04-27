@@ -20,16 +20,16 @@ router.get('/release', async (ctx) => {
     ctx.body = 'testSemaRelease response'
 });
 
-router.get('/read', async (ctx) => {
-    backend.testShmRead()
-    ctx.body = 'testShmRead response'
-});
-
-//  curl -H "Content-Type:application/json" -X POST http://127.0.0.1:5050/write -d '{"key": "val"}'
-router.post('/write', async (ctx) => {
-    await backend.testShmWrite(JSON.stringify(ctx.request.body))
-    ctx.body = 'testShmWrite response'
-})
+// router.get('/read', async (ctx) => {
+//     backend.testShmRead()
+//     ctx.body = 'testShmRead response'
+// });
+//
+// //  curl -H "Content-Type:application/json" -X POST http://127.0.0.1:5050/write -d '{"key": "val"}'
+// router.post('/write', async (ctx) => {
+//     await backend.testShmWrite(JSON.stringify(ctx.request.body))
+//     ctx.body = 'testShmWrite response'
+// })
 
 // 加载路由中间件
 app.use(router.routes()).use(router.allowedMethods())

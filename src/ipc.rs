@@ -423,7 +423,7 @@ impl AbsShm for LinShm {
     fn read_str(&self, offset: u32, size: u32) -> String {
         return do_shm_read_str(self.handler, offset, size);
     }
-    
+
 }
 
 ///////////////////////////////////////////////////////////////////////////

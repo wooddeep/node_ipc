@@ -23,7 +23,6 @@ const Router = require('koa-router')
 const Koa = require('koa')
 const bodyParser = require('koa-bodyparser')
 
-
 const wsd = require("./wsd")
 const events = require("events")
 
@@ -31,26 +30,6 @@ const app = new Koa()
 let router = new Router()
 app.use(bodyParser())
 
-router.get('/require', async (ctx) => {
-    await backend.testSemaRequire()
-    ctx.body = 'testSemaRequire response'
-});
-
-router.get('/release', async (ctx) => {
-    await backend.testSemaRelease()
-    ctx.body = 'testSemaRelease response'
-});
-
-router.get('/read', async (ctx) => {
-    backend.testShmRead()
-    ctx.body = 'testShmRead response'
-});
-
-//  curl -H "Content-Type:application/json" -X POST http://127.0.0.1:5050/write -d '{"key": "val"}'
-router.post('/write', async (ctx) => {
-    await backend.testShmWrite(JSON.stringify(ctx.request.body))
-    ctx.body = 'testShmWrite response'
-})
 
 // 加载路由中间件
 app.use(router.routes()).use(router.allowedMethods())
@@ -66,29 +45,6 @@ process.on("beforeExit", (code) => {
     console.log("## pre exit in node...")
     backend.processExit()
 })
-
-function delay(secs) {
-    let promise = new Promise((resolve) => {
-        setTimeout(() => resolve(true), 1000 * secs)
-    });
-    return promise;
-}
-
-function do_sub() {
-    subscribe(async () => {
-        let data = await backend.testShmRead();
-        if (data.length > 2) {
-            console.log(`## process id: ${process.pid}; data.length = ${data.length}, data = ${data}, time = ${new Date()}`)
-        }
-    });
-}
-
-function subscribe(callback) {
-    backend.callNodeFunc().then((data) => {
-        callback(data)
-        subscribe(callback)
-    })
-}
 
 if (cluster.isMaster) { // main process
     cluster.schedulingPolicy = cluster.SCHED_RR;
@@ -114,7 +70,7 @@ if (cluster.isMaster) { // main process
 } else {
     backend.workerInit(child_proc_num, Number.parseInt(process.env["WORKER_INDEX"]))
     const emitter = new events.EventEmitter();
-    backend.callSafeFunc(async (data) => {
+    backend.regNodeFunc(async (data) => {
         if (data.length > 2) {
             console.log(`## process id: ${process.pid}; data.length = ${data.length}, data = ${data}, time = ${new Date()}`)
             emitter.emit("peer", data)
@@ -154,7 +110,7 @@ class WsServer {
     async onMessage(message, socket) {
         let data = JSON.parse(message.toString());
         //console.log(`## onMessage: ${JSON.stringify(data)}`)
-        await backend.testShmWrite(JSON.stringify(JSON.stringify(data)))
+        await backend.broadcast(JSON.stringify(JSON.stringify(data)))
     }
 
     onClose(socket) {
