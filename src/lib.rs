@@ -285,7 +285,7 @@ pub fn call_safe_func(callback: JsFunction) -> Result<()> {
             data.map(|v| vec![v])
         })?;
 
-    let delay = time::Duration::from_millis(2000);
+    let delay = time::Duration::from_millis(10);
     thread::spawn(move || {
         loop {
             unsafe {

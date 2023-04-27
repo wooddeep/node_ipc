@@ -1,6 +1,6 @@
 {
   "name": "@wooddeep/node_ipc",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "main": "index.js",
   "bin": {
     "winaddon": "./node_ipc.win32-x64-msvc.node",
@@ -38,8 +38,8 @@
     "koa-router": "^12.0.0"
   },
   "optionalDependencies": {
-    "@wooddeep/node_ipc-win32-x64-msvc": "0.1.4",
-    "@wooddeep/node_ipc-darwin-x64": "0.1.4",
-    "@wooddeep/node_ipc-linux-x64-gnu": "0.1.4"
+    "@wooddeep/node_ipc-win32-x64-msvc": "0.1.6",
+    "@wooddeep/node_ipc-darwin-x64": "0.1.6",
+    "@wooddeep/node_ipc-linux-x64-gnu": "0.1.6"
   }
 }

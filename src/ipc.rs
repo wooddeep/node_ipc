@@ -429,92 +429,6 @@ impl AbsShm for LinShm {
     }
 }
 
-#[cfg(target_os = "linux")]
-pub fn do_shm_read_buf(map: *mut c_void, offset: u32, size: u32) -> &'static [u8] {
-    if map.is_null() {
-        log::info!("map is null");
-    }
-
-    unsafe {
-        let src = map as *const u8;
-        let slice = std::slice::from_raw_parts(src.offset(offset as isize), size as usize);
-        slice
-    }
-}
-
-#[cfg(target_os = "linux")]
-pub fn do_shm_write(map: *mut c_void, offset: u32, buffer: &[u8]) {
-    let data_ptr = buffer.as_ptr();
-    if map.is_null() {
-        log::info!("MapViewOfFile failed");
-    }
-
-    unsafe {
-        let dst = map as *mut u8;
-        ptr::copy_nonoverlapping(data_ptr, dst.offset(offset as isize), buffer.len());
-    }
-}
-
-#[cfg(target_os = "linux")]
-pub fn do_shm_read_str(map: *mut c_void, offset: u32, size: u32) -> String {
-    if map.is_null() {
-        log::info!("map is null");
-    }
-
-    let buffer = unsafe {
-        let src = map as *const u8;
-        let slice = std::slice::from_raw_parts(src.offset(offset as isize), size as usize);
-        let mut len = slice.len();
-        for i in 0..slice.len() {
-            if slice[i] == 0 {
-                len = i + 1;
-                break;
-            }
-        }
-        std::str::from_utf8_unchecked(&slice[..len])
-    };
-
-    return String::from(buffer);
-}
-
-
-#[cfg(target_os = "linux")]
-pub fn shm_create(name: &str, size: u32) -> (*mut c_void, i32) {
-    let shm_id = unsafe { shmget(123456, size as usize, IPC_CREAT | IPC_EXCL | 0o666) };
-    if shm_id == -1 {
-        eprintln!("[0] Failed to create shared memory: {}", std::io::Error::last_os_error());
-        return (null_mut(), 0);
-    }
-
-    let shmat_result = unsafe { shmat(shm_id, null_mut(), 0) };
-
-    return (shmat_result, shm_id);
-}
-
-
-#[cfg(target_os = "linux")]
-pub fn shm_open(name: &str, size: u32) -> (*mut c_void, i32) {
-    let shm_id = unsafe { shmget(123456, 0, IPC_EXCL | 0o666 as i32) };
-
-    if shm_id == -1 {
-        eprintln!("[1] Failed to create shared memory: {}", std::io::Error::last_os_error());
-        return (null_mut(), 0);
-    }
-
-    let shmat_result = unsafe { shmat(shm_id, null_mut(), 0) };
-    return (shmat_result, shm_id);
-}
-
-
-#[cfg(target_os = "linux")]
-pub fn shm_clearup(shm_id: i32) {
-    let ret = unsafe { shmctl(shm_id, IPC_RMID, 0 as *mut libc::shmid_ds) };
-    if ret == -1 {
-        eprintln!("Failed to delete shared memory: {}", std::io::Error::last_os_error());
-    }
-}
-
-
 ///////////////////////////////////////////////////////////////////////////
 //  linux semaphore implement!!!
 ///////////////////////////////////////////////////////////////////////////
@@ -636,6 +550,90 @@ pub fn sema_close(sem_id: i32) {
     }
 }
 
+#[cfg(target_os = "linux")]
+pub fn do_shm_read_buf(map: *mut c_void, offset: u32, size: u32) -> &'static [u8] {
+    if map.is_null() {
+        log::info!("map is null");
+    }
+
+    unsafe {
+        let src = map as *const u8;
+        let slice = std::slice::from_raw_parts(src.offset(offset as isize), size as usize);
+        slice
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub fn do_shm_write(map: *mut c_void, offset: u32, buffer: &[u8]) {
+    let data_ptr = buffer.as_ptr();
+    if map.is_null() {
+        log::info!("MapViewOfFile failed");
+    }
+
+    unsafe {
+        let dst = map as *mut u8;
+        ptr::copy_nonoverlapping(data_ptr, dst.offset(offset as isize), buffer.len());
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub fn do_shm_read_str(map: *mut c_void, offset: u32, size: u32) -> String {
+    if map.is_null() {
+        log::info!("map is null");
+    }
+
+    let buffer = unsafe {
+        let src = map as *const u8;
+        let slice = std::slice::from_raw_parts(src.offset(offset as isize), size as usize);
+        let mut len = slice.len();
+        for i in 0..slice.len() {
+            if slice[i] == 0 {
+                len = i + 1;
+                break;
+            }
+        }
+        std::str::from_utf8_unchecked(&slice[..len])
+    };
+
+    return String::from(buffer);
+}
+
+
+#[cfg(target_os = "linux")]
+pub fn shm_create(name: &str, size: u32) -> (*mut c_void, i32) {
+    let shm_id = unsafe { shmget(123456, size as usize, IPC_CREAT | IPC_EXCL | 0o666) };
+    if shm_id == -1 {
+        eprintln!("[0] Failed to create shared memory: {}", std::io::Error::last_os_error());
+        return (null_mut(), 0);
+    }
+
+    let shmat_result = unsafe { shmat(shm_id, null_mut(), 0) };
+
+    return (shmat_result, shm_id);
+}
+
+
+#[cfg(target_os = "linux")]
+pub fn shm_open(name: &str, size: u32) -> (*mut c_void, i32) {
+    let shm_id = unsafe { shmget(123456, 0, IPC_EXCL | 0o666 as i32) };
+
+    if shm_id == -1 {
+        eprintln!("[1] Failed to create shared memory: {}", std::io::Error::last_os_error());
+        return (null_mut(), 0);
+    }
+
+    let shmat_result = unsafe { shmat(shm_id, null_mut(), 0) };
+    return (shmat_result, shm_id);
+}
+
+
+#[cfg(target_os = "linux")]
+pub fn shm_clearup(shm_id: i32) {
+    let ret = unsafe { shmctl(shm_id, IPC_RMID, 0 as *mut libc::shmid_ds) };
+    if ret == -1 {
+        eprintln!("Failed to delete shared memory: {}", std::io::Error::last_os_error());
+    }
+}
 
 ///////////////////////////////////////////////////////////////////////
 //  export function !!!
