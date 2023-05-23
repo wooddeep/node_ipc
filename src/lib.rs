@@ -3,6 +3,8 @@ extern crate napi_derive;
 
 use std::collections::HashMap;
 use std::io::Error;
+use std::sync::mpsc::{Sender, Receiver};
+use std::sync::Arc;
 use std::path::Path;
 use std::process;
 use std::ptr;
@@ -12,6 +14,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::channel;
 use std::thread;
 use std::time;
+use std::time::Duration;
 
 use futures::prelude::*;
 use log::{info, LevelFilter, warn};
@@ -47,11 +50,15 @@ static MAX_MSG_CNT_PER_CELL: u32 = 100;
 //  200 bytes per message!
 static MAX_MSG_LEN: u32 = 200;
 static mut MAX_WORKER_NUM: u32 = 0;
+static mut IS_MASTER: bool = false;
 // sizeof(head_index) + sizeof(tail_index)
 static MSG_CELL_META_SIZE: u32 = 8;
 static MSG_CELL_SIZE: u32 = MSG_CELL_META_SIZE + MAX_MSG_CNT_PER_CELL * MAX_MSG_LEN;
 
 static mut WORKER_INDEX: u32 = 0;
+static mut MSGQUE_INDEX: u32 = 0;
+static mut mq_tx_array : Vec<Sender<String>> = Vec::new();
+
 static mut ready: AtomicBool = AtomicBool::new(false);
 
 #[napi]
@@ -218,27 +225,31 @@ fn init_sema_map(worker_num: u32, ot: u32) {
 
 #[napi]
 pub async fn master_init(worker_num: u32) {
-    unsafe {
-        MAX_WORKER_NUM = worker_num;
-        let shm_size = MAX_WORKER_NUM * MAX_WORKER_NUM * MSG_CELL_SIZE;
-        let abs_shm = ipc::abs_shm_create("SHM_NAME", shm_size);
-        shm_handler = Some(Box::new(abs_shm));
+    task::spawn_blocking(move || {
+        unsafe {
+            MAX_WORKER_NUM = worker_num;
+            IS_MASTER = true;
+            let shm_size = MAX_WORKER_NUM * MAX_WORKER_NUM * MSG_CELL_SIZE;
+            let abs_shm = ipc::abs_shm_create("SHM_NAME", shm_size);
+            shm_handler = Some(Box::new(abs_shm));
 
-        init_sema_map(worker_num, 0);
-        ready.store(true, Ordering::SeqCst);
-    }
+            init_sema_map(worker_num, 0);
+            ready.store(true, Ordering::SeqCst);
+        }
+    }).await.unwrap();
 }
 
 #[napi]
-pub fn worker_init(worker_num: u32, index: u32) {
+pub async fn worker_init(worker_num: u32, index: u32) {
     let logfile = std::fs::File::create(format!("node_ipc.log")).unwrap();
     let config = Config::default();
     let file_logger = WriteLogger::new(LevelFilter::Info, config, logfile);
     CombinedLogger::init(vec![file_logger]).unwrap();
 
-    thread::spawn(move || {
+    task::spawn_blocking(move || {
         unsafe {
             WORKER_INDEX = index;
+            MSGQUE_INDEX = index + 1;
             MAX_WORKER_NUM = worker_num;
             let shm_size = MAX_WORKER_NUM * MAX_WORKER_NUM * MSG_CELL_SIZE;
 
@@ -248,7 +259,7 @@ pub fn worker_init(worker_num: u32, index: u32) {
             init_sema_map(worker_num, 1);
             ready.store(true, Ordering::SeqCst);
         }
-    });
+    }).await.unwrap();
 }
 
 #[napi]
@@ -299,6 +310,79 @@ pub fn reg_node_func(callback: JsFunction) -> Result<()> {
     });
 
     Ok(())
+}
+
+// query named pipe in windows
+// $ handle -a \Device\NamedPipe | grep -i ipc_pipe
+
+/**
+ * message queue between process map:
+ * -------------------------------------
+ * master  <- [worker0, worker1, worker2]
+ * worker0 <- [master,  worker1, worker2]
+ * worker1 <- [worker0, master,  worker2]
+ * worker2 <- [worker0, worker1,  master]
+ */
+#[napi(ts_args_type = "callback: (result: string) => void")]
+pub unsafe fn listen(callback: JsFunction) -> Result<()> {
+    let tsfn: ThreadsafeFunction<String, ErrorStrategy::Fatal> = callback
+        .create_threadsafe_function(0, |ctx: ThreadSafeCallContext<String>| {
+            let data = ctx.env.create_string(ctx.value.as_str());
+            data.map(|v| vec![v])
+        })?;
+
+    let (tx, rx): (Sender<String>, Receiver<String>) = channel();
+
+    for msgque_index in 0..MAX_WORKER_NUM + 1 {
+        if msgque_index == MSGQUE_INDEX {
+            continue;
+        }
+        let tx_clone = tx.clone();
+        let t1 = thread::spawn(move || {
+            ipc::mq_server(MSGQUE_INDEX, msgque_index, tx_clone); // 启动mq server
+        });
+    }
+
+    // start thread to receive message from other process
+    thread::spawn(move || {
+        loop {
+            unsafe {
+                match rx.recv() {
+                    Ok(msg) => {
+                        tsfn.call(msg, ThreadsafeFunctionCallMode::NonBlocking);
+                    }
+                    _ => {
+                        thread::sleep(Duration::from_secs_f32(3.5));
+                    }
+                }
+            }
+        }
+    });
+
+    //tx.send(String::from("hello")).unwrap();
+
+    Ok(())
+}
+
+#[napi]
+pub unsafe fn establish() {
+    for msgque_index in 0..MAX_WORKER_NUM + 1 {
+        if msgque_index == MSGQUE_INDEX {
+            continue;
+        }
+
+        let (tx, rx): (Sender<String>, Receiver<String>) = channel();
+        mq_tx_array.push(tx);
+
+        let t1 = thread::spawn(move || {
+            ipc::mq_connect(msgque_index, MSGQUE_INDEX, rx); // 启动mq server
+        });
+    }
+}
+
+#[napi]
+pub unsafe fn publish(target_index: u32, content: String) {
+    mq_tx_array.get(target_index as usize).as_ref().unwrap().send(content);
 }
 
 #[napi]

@@ -1,32 +1,58 @@
 use std::ffi::OsStr;
+use std::fs::OpenOptions;
+use std::io::{Read, Write};
 use std::os::raw::c_void;
+use std::os::windows::io::{AsRawHandle, FromRawHandle};
+use std::path::Path;
+use std::ptr;
+use std::ptr::null_mut;
+use std::thread;
+use std::time::Duration;
+use futures::StreamExt as _;
+use napi::{CallContext, JsNull, JsNumber};
+use regex::Regex;
+use std::sync::mpsc::{Sender, Receiver};
+use std::sync::Arc;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::ffi::OsStrExt;
-use std::ptr;
-use std::ptr::null_mut;
-
-use futures::StreamExt as _;
-use napi::{CallContext, JsNull, JsNumber};
-
 #[cfg(target_os = "windows")]
-use winapi::shared::minwindef::LPVOID;
+use std::os::windows::fs::OpenOptionsExt;
+#[cfg(target_os = "windows")]
 #[cfg(target_os = "windows")]
 use winapi::shared::minwindef::{DWORD, FALSE, TRUE};
 #[cfg(target_os = "windows")]
+use winapi::shared::minwindef::LPVOID;
+#[cfg(target_os = "windows")]
+use winapi::shared::winerror::{ERROR_PIPE_CONNECTED, ERROR_SUCCESS};
+#[cfg(target_os = "windows")]
 use winapi::um::errhandlingapi::GetLastError;
+#[cfg(target_os = "windows")]
+use winapi::um::fileapi::{ReadFile, WriteFile};
+#[cfg(target_os = "windows")]
+use winapi::um::fileapi::{CreateFileW, OPEN_EXISTING};
 #[cfg(target_os = "windows")]
 use winapi::um::handleapi::{CloseHandle, INVALID_HANDLE_VALUE};
 #[cfg(target_os = "windows")]
 use winapi::um::memoryapi::{
-    CreateFileMappingW, MapViewOfFile, OpenFileMappingW, UnmapViewOfFile, FILE_MAP_ALL_ACCESS,
+    CreateFileMappingW, FILE_MAP_ALL_ACCESS, MapViewOfFile, OpenFileMappingW, UnmapViewOfFile,
 };
+#[cfg(target_os = "windows")]
+use winapi::um::namedpipeapi::{ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe};
 #[cfg(target_os = "windows")]
 use winapi::um::synchapi::{
     CreateSemaphoreW, OpenSemaphoreW, ReleaseSemaphore, WaitForSingleObject,
 };
 #[cfg(target_os = "windows")]
+use winapi::um::winbase::{FILE_FLAG_OVERLAPPED, PIPE_ACCESS_DUPLEX, PIPE_TYPE_MESSAGE, PIPE_UNLIMITED_INSTANCES, PIPE_WAIT};
+#[cfg(target_os = "windows")]
+use winapi::um::winbase::{PIPE_READMODE_BYTE, PIPE_TYPE_BYTE};
+#[cfg(target_os = "windows")]
 use winapi::um::winbase::WAIT_OBJECT_0;
+#[cfg(target_os = "windows")]
+use winapi::um::winnt::{GENERIC_READ, GENERIC_WRITE};
+#[cfg(target_os = "windows")]
+use winapi::um::winnt::{FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ};
 #[cfg(target_os = "windows")]
 use winapi::um::winnt::HANDLE;
 #[cfg(target_os = "windows")]
@@ -34,21 +60,18 @@ use winapi::um::winnt::PAGE_READWRITE;
 #[cfg(target_os = "windows")]
 use winapi::um::winnt::SEMAPHORE_ALL_ACCESS;
 
-use regex::Regex;
-
 #[cfg(target_os = "linux")]
 extern crate libc;
 
 #[cfg(target_os = "linux")]
-use libc::{shmat, shmctl, shmdt, shmget, semget, semctl, semop, IPC_CREAT, IPC_EXCL, IPC_RMID, SHM_R, SHM_W, S_IRUSR, S_IWUSR};
+use std::ffi::CString;
+#[cfg(target_os = "linux")]
+use libc::{IPC_CREAT, IPC_EXCL, IPC_RMID, S_IRUSR, S_IWUSR, semctl, semget, semop, SHM_R, SHM_W, shmat, shmctl, shmdt, shmget};
 
 #[cfg(target_os = "linux")]
 static SETVAL: i32 = 16;
 // cannot found SETVAL definition in libc, define here .
 static SEM_UNDO: i16 = 1;
-
-#[cfg(target_os = "linux")]
-use std::ffi::CString;
 
 pub enum Operator {
     CREATE,
@@ -74,6 +97,9 @@ pub trait AbsSema {
     fn require(&self);
     fn release(&self);
 }
+
+pub trait AbsMq {}
+
 
 ///////////////////////////////////////////////////////////////////////////
 //  windows share memory implement!!!
@@ -384,6 +410,188 @@ pub fn sema_close(semaphore: HANDLE) -> bool {
 }
 
 ///////////////////////////////////////////////////////////////////////////
+//  windows message queue implement!!!
+///////////////////////////////////////////////////////////////////////////
+
+fn create_pipe_name(own_id: u32, peer_id: u32) -> Vec<u16> {
+    let name_str = format!("\\\\.\\pipe\\ipc_pipe-{}-{}-", own_id, peer_id);
+    let mut name = name_str.encode_utf16().collect::<Vec<u16>>();
+    let pos = name.len() as usize;
+    name[pos - 1] = 0;
+    return name;
+}
+
+pub fn mq_server_bak(own_id: u32, peer_id: u32) {
+    let pipe_handle = unsafe {
+        let mut name = create_pipe_name(own_id, peer_id);
+        CreateNamedPipeW(
+            name.as_ptr(),
+            PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
+            PIPE_TYPE_BYTE,
+            1,
+            1024,
+            1024,
+            0,
+            std::ptr::null_mut(),
+        )
+    };
+
+    if pipe_handle == winapi::um::handleapi::INVALID_HANDLE_VALUE {
+        panic!("Failed to create named pipe");
+    }
+
+    let mut result = unsafe { ConnectNamedPipe(pipe_handle, std::ptr::null_mut()) };
+    if result == 0 {
+        println!("failed to wait incoming named pipe");
+    }
+
+    loop {
+        let mut buf = [0u8; 1024];
+        let mut byte_read = 0;
+        let read_success = unsafe {
+            ReadFile(
+                pipe_handle,
+                buf.as_mut_ptr() as *mut _,
+                buf.len() as u32,
+                &mut byte_read,
+                std::ptr::null_mut(),
+            )
+        };
+
+        if read_success == 0 {
+            let error_code = std::io::Error::last_os_error().raw_os_error().unwrap();
+            if error_code == ERROR_PIPE_CONNECTED as i32 {
+                break;
+            } else {
+                unsafe {
+                    CloseHandle(pipe_handle);
+                }
+                thread::spawn(move || {
+                    mq_server_bak(own_id, peer_id);
+                });
+                panic!("fail to read from named pipe");
+            }
+        }
+        let req_str = std::str::from_utf8(&buf[..byte_read as usize]).unwrap();
+        println!("# client request: {}", req_str);
+
+        let message = "Hello from server";
+        let result = unsafe {
+            WriteFile(pipe_handle,
+                      message.as_ptr() as *const _,
+                      message.len() as u32,
+                      std::ptr::null_mut(),
+                      std::ptr::null_mut(),
+            )
+        };
+
+        if result == 0 {
+            println!("fail to write named pipe!");
+        }
+    }
+}
+
+pub fn mq_server(own_id: u32, peer_id: u32, sender: Sender<String>) {
+    let pipe_handle = unsafe {
+        let mut name = create_pipe_name(own_id, peer_id);
+        CreateNamedPipeW(
+            name.as_ptr(),
+            PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
+            PIPE_TYPE_BYTE,
+            1,
+            1024,
+            1024,
+            0,
+            std::ptr::null_mut(),
+        )
+    };
+
+    if pipe_handle == winapi::um::handleapi::INVALID_HANDLE_VALUE {
+        panic!("Failed to create named pipe");
+    }
+
+    let mut result = unsafe { ConnectNamedPipe(pipe_handle, std::ptr::null_mut()) };
+    if result == 0 {
+        panic!("failed to wait incoming named pipe");
+    }
+
+    loop {
+        let mut buf = [0u8; 1024];
+        let mut byte_read = 0;
+        let read_success = unsafe {
+            ReadFile(
+                pipe_handle,
+                buf.as_mut_ptr() as *mut _,
+                buf.len() as u32,
+                &mut byte_read,
+                std::ptr::null_mut(),
+            )
+        };
+
+        if read_success == 0 {
+            let error_code = std::io::Error::last_os_error().raw_os_error().unwrap();
+            if error_code == ERROR_PIPE_CONNECTED as i32 {
+                break;
+            } else {
+                unsafe {
+                    CloseHandle(pipe_handle);
+                }
+                thread::spawn(move || {
+                    mq_server(own_id, peer_id, sender);
+                });
+                panic!("fail to read from named pipe");
+            }
+        }
+        let req_str = std::str::from_utf8(&buf[..byte_read as usize]).unwrap();
+        println!("# client request: {}", req_str);
+
+        // 通过线程间通信, 把消息发送给js
+        sender.send(String::from(req_str)).unwrap();
+    }
+}
+
+pub fn mq_connect(own_id: u32, peer_id: u32, receiver: Receiver<String>) {
+    let mut pipe_handle = unsafe {
+        let mut name = create_pipe_name(own_id, peer_id);
+
+        let handle = CreateFileW(
+            name.as_ptr(),
+            GENERIC_READ | GENERIC_WRITE,
+            FILE_SHARE_READ,
+            ptr::null_mut(),
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            ptr::null_mut(),
+        );
+        if handle == winapi::um::handleapi::INVALID_HANDLE_VALUE {
+            let error_code = std::io::Error::last_os_error().raw_os_error().unwrap();
+            println!("# CreateFileW errcode: {}", error_code);
+        }
+        handle
+    };
+
+    loop {
+        unsafe {
+            match receiver.recv() {
+                Ok(msg) => {
+                    let result = unsafe {
+                        WriteFile(pipe_handle,
+                                  msg.as_ptr() as *const _,
+                                  msg.len() as u32,
+                                  std::ptr::null_mut(),
+                                  std::ptr::null_mut(),
+                        )
+                    };
+                }
+                _ => {
+                    thread::sleep(Duration::from_secs_f32(3.5));
+                }
+            }
+        }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////
 //  linux share memory implement!!!
 ///////////////////////////////////////////////////////////////////////////
 
@@ -423,7 +631,6 @@ impl AbsShm for LinShm {
     fn read_str(&self, offset: u32, size: u32) -> String {
         return do_shm_read_str(self.handler, offset, size);
     }
-
 }
 
 ///////////////////////////////////////////////////////////////////////////

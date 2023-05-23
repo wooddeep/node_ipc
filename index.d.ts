@@ -7,9 +7,20 @@ export function testSemaRelease(): Promise<void>
 export function testSemaRequire(): Promise<void>
 export function broadcast(input: string): Promise<void>
 export function masterInit(workerNum: number): Promise<void>
-export function workerInit(workerNum: number, index: number): void
+export function workerInit(workerNum: number, index: number): Promise<void>
 export function processExit(): void
 export function sendData(index: number, data: Buffer, n: number): void
 export function regNodeFunc(callback: (result: string) => void): void
+/**
+ * message queue between process map:
+ * -------------------------------------
+ * master  <- [worker0, worker1, worker2]
+ * worker0 <- [master,  worker1, worker2]
+ * worker1 <- [worker0, master,  worker2]
+ * worker2 <- [worker0, worker1,  master]
+*/
+export function listen(callback: (result: string) => void): void
+export function establish(): void
+export function publish(targetIndex: number, content: string): void
 export function callNodeFunc(): Promise<number>
 export function init(): void

@@ -27,7 +27,7 @@ futures = "0.3"
 bincode = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 
-winapi = { version = "0.3.8", features = ["memoryapi", "handleapi", "winbase", "minwindef", "winnt", "minwinbase", "synchapi", "winerror"] }
+winapi = { version = "0.3.8", features = ["memoryapi", "handleapi", "winbase", "minwindef", "namedpipeapi", "winnt", "minwinbase", "synchapi", "winerror"] }
 widestring = "*"
 
 log = "0.4"
