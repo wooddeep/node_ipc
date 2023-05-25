@@ -13,6 +13,7 @@ use napi::{CallContext, JsNull, JsNumber};
 use regex::Regex;
 use std::sync::mpsc::{Sender, Receiver};
 use std::sync::Arc;
+use std::time;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::ffi::OsStrExt;
@@ -413,6 +414,7 @@ pub fn sema_close(semaphore: HANDLE) -> bool {
 //  windows message queue implement!!!
 ///////////////////////////////////////////////////////////////////////////
 
+#[cfg(target_os = "windows")]
 fn create_pipe_name(own_id: u32, peer_id: u32) -> Vec<u16> {
     let name_str = format!("\\\\.\\pipe\\ipc_pipe-{}-{}-", own_id, peer_id);
     let mut name = name_str.encode_utf16().collect::<Vec<u16>>();
@@ -421,76 +423,7 @@ fn create_pipe_name(own_id: u32, peer_id: u32) -> Vec<u16> {
     return name;
 }
 
-pub fn mq_server_bak(own_id: u32, peer_id: u32) {
-    let pipe_handle = unsafe {
-        let mut name = create_pipe_name(own_id, peer_id);
-        CreateNamedPipeW(
-            name.as_ptr(),
-            PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
-            PIPE_TYPE_BYTE,
-            1,
-            1024,
-            1024,
-            0,
-            std::ptr::null_mut(),
-        )
-    };
-
-    if pipe_handle == winapi::um::handleapi::INVALID_HANDLE_VALUE {
-        panic!("Failed to create named pipe");
-    }
-
-    let mut result = unsafe { ConnectNamedPipe(pipe_handle, std::ptr::null_mut()) };
-    if result == 0 {
-        println!("failed to wait incoming named pipe");
-    }
-
-    loop {
-        let mut buf = [0u8; 1024];
-        let mut byte_read = 0;
-        let read_success = unsafe {
-            ReadFile(
-                pipe_handle,
-                buf.as_mut_ptr() as *mut _,
-                buf.len() as u32,
-                &mut byte_read,
-                std::ptr::null_mut(),
-            )
-        };
-
-        if read_success == 0 {
-            let error_code = std::io::Error::last_os_error().raw_os_error().unwrap();
-            if error_code == ERROR_PIPE_CONNECTED as i32 {
-                break;
-            } else {
-                unsafe {
-                    CloseHandle(pipe_handle);
-                }
-                thread::spawn(move || {
-                    mq_server_bak(own_id, peer_id);
-                });
-                panic!("fail to read from named pipe");
-            }
-        }
-        let req_str = std::str::from_utf8(&buf[..byte_read as usize]).unwrap();
-        println!("# client request: {}", req_str);
-
-        let message = "Hello from server";
-        let result = unsafe {
-            WriteFile(pipe_handle,
-                      message.as_ptr() as *const _,
-                      message.len() as u32,
-                      std::ptr::null_mut(),
-                      std::ptr::null_mut(),
-            )
-        };
-
-        if result == 0 {
-            println!("fail to write named pipe!");
-        }
-    }
-}
-
+#[cfg(target_os = "windows")]
 pub fn mq_server(own_id: u32, peer_id: u32, sender: Sender<String>) {
     let pipe_handle = unsafe {
         let mut name = create_pipe_name(own_id, peer_id);
@@ -509,6 +442,7 @@ pub fn mq_server(own_id: u32, peer_id: u32, sender: Sender<String>) {
     if pipe_handle == winapi::um::handleapi::INVALID_HANDLE_VALUE {
         panic!("Failed to create named pipe");
     }
+    println!("## to create ipc_pipe-{}-{} ok", own_id, peer_id);
 
     let mut result = unsafe { ConnectNamedPipe(pipe_handle, std::ptr::null_mut()) };
     if result == 0 {
@@ -543,17 +477,16 @@ pub fn mq_server(own_id: u32, peer_id: u32, sender: Sender<String>) {
             }
         }
         let req_str = std::str::from_utf8(&buf[..byte_read as usize]).unwrap();
-        println!("# client request: {}", req_str);
 
         // 通过线程间通信, 把消息发送给js
         sender.send(String::from(req_str)).unwrap();
     }
 }
 
+#[cfg(target_os = "windows")]
 pub fn mq_connect(own_id: u32, peer_id: u32, receiver: Receiver<String>) {
     let mut pipe_handle = unsafe {
         let mut name = create_pipe_name(own_id, peer_id);
-
         let handle = CreateFileW(
             name.as_ptr(),
             GENERIC_READ | GENERIC_WRITE,
@@ -563,12 +496,11 @@ pub fn mq_connect(own_id: u32, peer_id: u32, receiver: Receiver<String>) {
             FILE_ATTRIBUTE_NORMAL,
             ptr::null_mut(),
         );
-        if handle == winapi::um::handleapi::INVALID_HANDLE_VALUE {
-            let error_code = std::io::Error::last_os_error().raw_os_error().unwrap();
-            println!("# CreateFileW errcode: {}", error_code);
-        }
+
         handle
     };
+
+    println!("## to connect ipc_pipe-{}-{} ok", own_id, peer_id);
 
     loop {
         unsafe {

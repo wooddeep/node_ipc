@@ -325,6 +325,7 @@ pub fn reg_node_func(callback: JsFunction) -> Result<()> {
  */
 #[napi(ts_args_type = "callback: (result: string) => void")]
 pub unsafe fn listen(callback: JsFunction) -> Result<()> {
+
     let tsfn: ThreadsafeFunction<String, ErrorStrategy::Fatal> = callback
         .create_threadsafe_function(0, |ctx: ThreadSafeCallContext<String>| {
             let data = ctx.env.create_string(ctx.value.as_str());
@@ -338,6 +339,7 @@ pub unsafe fn listen(callback: JsFunction) -> Result<()> {
             continue;
         }
         let tx_clone = tx.clone();
+
         let t1 = thread::spawn(move || {
             ipc::mq_server(MSGQUE_INDEX, msgque_index, tx_clone); // 启动mq server
         });
@@ -359,25 +361,26 @@ pub unsafe fn listen(callback: JsFunction) -> Result<()> {
         }
     });
 
-    //tx.send(String::from("hello")).unwrap();
-
     Ok(())
 }
 
 #[napi]
-pub unsafe fn establish() {
-    for msgque_index in 0..MAX_WORKER_NUM + 1 {
-        if msgque_index == MSGQUE_INDEX {
-            continue;
+pub async unsafe fn establish() {
+    task::spawn_blocking(move || {
+        for msgque_index in 0..MAX_WORKER_NUM + 1 {
+
+            let (tx, rx): (Sender<String>, Receiver<String>) = channel();
+            mq_tx_array.push(tx);
+
+            if msgque_index == MSGQUE_INDEX {
+                continue;
+            }
+
+            let t1 = thread::spawn(move || {
+                ipc::mq_connect(msgque_index, MSGQUE_INDEX, rx); // start mq server
+            });
         }
-
-        let (tx, rx): (Sender<String>, Receiver<String>) = channel();
-        mq_tx_array.push(tx);
-
-        let t1 = thread::spawn(move || {
-            ipc::mq_connect(msgque_index, MSGQUE_INDEX, rx); // 启动mq server
-        });
-    }
+    }).await.unwrap();
 }
 
 #[napi]

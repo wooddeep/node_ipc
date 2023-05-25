@@ -52,8 +52,15 @@ async function main() {
 
         await backend.masterInit(child_proc_num);
         backend.listen(async (data) => {
-            console.log(`## msg from other process | process id: ${process.pid}; data.length = ${data.length}, data = ${data}, time = ${new Date()}`)
+            console.log(`##[master:${process.pid}] msg from other process | process id: ${process.pid}; data.length = ${data.length}, data = ${data}, time = ${new Date()}`)
         });
+
+        setTimeout(async () => { // wait for worker's named pipe create
+            await backend.establish();
+            setInterval(() => {
+                backend.publish(1, `msg form worker[${process.pid}]`); // send message to 1st worker
+            }, 3000);
+        }, 3000);
 
         let child_map = new Map()
         for (var i = 0, n = child_proc_num; i < n; i += 1) {
@@ -75,11 +82,13 @@ async function main() {
     } else {
 
         await backend.workerInit(child_proc_num, Number.parseInt(process.env["WORKER_INDEX"]));
+        backend.listen(async (data) => {
+            console.log(`##[worker:${process.pid}] msg from other process | process id: ${process.pid}; data.length = ${data.length}, data = ${data}, time = ${new Date()}`)
+        });
 
-        backend.establish();
-
+        await backend.establish();
         setInterval(() => {
-            backend.publish(0, "msg form worker");
+            backend.publish(0, `msg form worker[${process.pid}]`);
         }, 3000);
 
         const emitter = new events.EventEmitter();

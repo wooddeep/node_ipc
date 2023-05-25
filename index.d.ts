@@ -20,7 +20,7 @@ export function regNodeFunc(callback: (result: string) => void): void
  * worker2 <- [worker0, worker1,  master]
 */
 export function listen(callback: (result: string) => void): void
-export function establish(): void
+export function establish(): Promise<void>
 export function publish(targetIndex: number, content: string): void
 export function callNodeFunc(): Promise<number>
 export function init(): void
