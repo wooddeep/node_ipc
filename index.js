@@ -252,19 +252,20 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { broadcast, masterInit, workerInit, processExit, sendData, regNodeFunc, semaCreate, semaOpen, semaClose, semaRequire, semaRelease, mqCreate, listen, establish, publish, callNodeFunc, init } = nativeBinding
+const { processExit, semCreate, semOpen, semClose, semRequire, semRelease, shmCreate, shmOpen, shmClose, shmReadBuf, shmReadStr, shmWriteStr, mqCreate, listen, establish, publish, callNodeFunc, init } = nativeBinding
 
-module.exports.broadcast = broadcast
-module.exports.masterInit = masterInit
-module.exports.workerInit = workerInit
 module.exports.processExit = processExit
-module.exports.sendData = sendData
-module.exports.regNodeFunc = regNodeFunc
-module.exports.semaCreate = semaCreate
-module.exports.semaOpen = semaOpen
-module.exports.semaClose = semaClose
-module.exports.semaRequire = semaRequire
-module.exports.semaRelease = semaRelease
+module.exports.semCreate = semCreate
+module.exports.semOpen = semOpen
+module.exports.semClose = semClose
+module.exports.semRequire = semRequire
+module.exports.semRelease = semRelease
+module.exports.shmCreate = shmCreate
+module.exports.shmOpen = shmOpen
+module.exports.shmClose = shmClose
+module.exports.shmReadBuf = shmReadBuf
+module.exports.shmReadStr = shmReadStr
+module.exports.shmWriteStr = shmWriteStr
 module.exports.mqCreate = mqCreate
 module.exports.listen = listen
 module.exports.establish = establish

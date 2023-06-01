@@ -130,12 +130,12 @@ pub struct WinShm {
 #[cfg(target_os = "windows")]
 impl AbsShm for WinShm {
     fn create(&mut self, name: &str, size: u32) {
-        let handler = shm_create(size);
+        let handler = shm_create(size, String::from(name));
         self.handler = handler;
     }
 
     fn open(&mut self, name: &str, size: u32) {
-        let handler = shm_open(size);
+        let handler = shm_open(size, String::from(name));
         self.handler = handler
     }
 
@@ -158,8 +158,8 @@ impl AbsShm for WinShm {
 }
 
 #[cfg(target_os = "windows")]
-pub fn shm_create(size: u32) -> (LPVOID, HANDLE) {
-    let mapping_name = "RustMapping";
+pub fn shm_create(size: u32, name: String) -> (LPVOID, HANDLE) {
+    let mapping_name = format!("{}", name.clone());
     let mapping_size = size.try_into().unwrap();
 
     let handle = unsafe {
@@ -190,13 +190,13 @@ pub fn shm_create(size: u32) -> (LPVOID, HANDLE) {
     if map.is_null() {
         log::info!("MapViewOfFile failed");
     }
-
+    println!("--00-- handler: {:p}, address: {:p}, name: {}", map, handle, name);
     return (map, handle);
 }
 
 #[cfg(target_os = "windows")]
-pub fn shm_open(size: u32) -> (LPVOID, HANDLE) {
-    let mapping_name = "RustMapping";
+pub fn shm_open(size: u32, name: String) -> (LPVOID, HANDLE) {
+    let mapping_name = format!("{}", name.clone());
     let mapping_size: DWORD = size.try_into().unwrap();
 
     let handle = unsafe {
@@ -225,6 +225,8 @@ pub fn shm_open(size: u32) -> (LPVOID, HANDLE) {
         log::info!("MapViewOfFile failed");
     }
 
+    println!("--01-- handler: {:p}, address: {:p}, name: {}", map, handle, name);
+
     return (map, handle);
 }
 
@@ -233,52 +235,6 @@ pub fn shm_clearup(desc: (LPVOID, HANDLE)) {
     unsafe {
         UnmapViewOfFile(desc.0);
         CloseHandle(desc.1);
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn shm_read_demo(map: LPVOID) {
-    let mapping_name = "RustMapping";
-    let mapping_size = 1024;
-
-    let handle = unsafe {
-        OpenFileMappingW(
-            FILE_MAP_ALL_ACCESS,
-            false.into(),
-            mapping_name.encode_utf16().collect::<Vec<_>>().as_ptr(),
-        )
-    };
-
-    unsafe {
-        log::info!("[0] read last error: {}", GetLastError());
-    }
-
-    if handle.is_null() {
-        log::info!("OpenFileMappingW failed");
-    }
-
-    let map = unsafe {
-        MapViewOfFile(
-            handle,
-            FILE_MAP_ALL_ACCESS,
-            0,
-            0,
-            mapping_size as usize,
-        )
-    };
-
-    if map.is_null() {
-        log::info!("MapViewOfFile failed");
-    }
-
-    let buffer = unsafe {
-        let slice = std::slice::from_raw_parts(map as *const u8, mapping_size as usize);
-        std::str::from_utf8_unchecked(slice)
-    };
-
-    unsafe {
-        UnmapViewOfFile(map);
-        CloseHandle(handle);
     }
 }
 
@@ -307,7 +263,7 @@ pub fn do_shm_read_str(map: LPVOID, offset: u32, size: u32) -> String {
         let mut len = slice.len();
         for i in 0..slice.len() {
             if slice[i] == 0 {
-                len = i + 1;
+                len = i;
                 break;
             }
         }

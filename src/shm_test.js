@@ -7,19 +7,18 @@ const app = new Koa()
 let router = new Router()
 app.use(bodyParser())
 
-router.get('/require', async (ctx) => {
-    await backend.semaRequire("test")
+router.post('/write', async (ctx) => {
+    var data = ctx.request.body;
+    backend.shmWriteStr("test", 0, "hello world!")
     ctx.body = 'semaRequire response'
 });
 
-router.get('/release', async (ctx) => {
-    await backend.semaRelease("test")
-    ctx.body = 'semaRelease response'
+router.get('/read', async (ctx) => {
+    let data = backend.shmReadStr("test", 0, 1024);
+    ctx.body = data.trim()
 });
 
 app.use(router.routes()).use(router.allowedMethods())
-
-const child_proc_num = 3; // /*os.cpus().length*/
 
 process.on("SIGINT", () => {
     backend.processExit()
@@ -33,7 +32,12 @@ process.on("beforeExit", (code) => {
 
 async function main() {
 
-    await backend.semCreate("test");
+    if (process.argv[3] == "shm_open") {
+        await backend.shmOpen("RustMapping", 1024);
+    } else {
+        await backend.shmCreate("RustMapping", 1024);
+    }
+
     let port = Number.parseInt(process.argv[2]);
     port = port == undefined ? 3000 : port;
 
