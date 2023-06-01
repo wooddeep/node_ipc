@@ -27,6 +27,12 @@ use simplelog::{CombinedLogger, Config, SimpleLogger, TerminalMode, TermLogger, 
 use tokio::task;
 
 use lazy_static::lazy_static;
+use std::sync::Mutex;
+
+#[cfg(target_os = "windows")]
+use winapi::um::winnt::HANDLE;
+#[cfg(target_os = "windows")]
+use winapi::shared::minwindef::LPVOID;
 
 use sb::Builder;
 use crate::ipc::AbsShm;
@@ -71,9 +77,39 @@ struct MQReceiver<T> {
     receiver: Receiver<T>,
 }
 
+struct SemInfo {
+    #[cfg(target_os = "windows")]
+    handler: HANDLE,
+
+    #[cfg(target_os = "linux")]
+    id: i32,
+}
+
 static mut mq_tx_array: Vec<MQSender<String>> = Vec::new();
 static mut mq_rx_array: Vec<MQReceiver<String>> = Vec::new();
 
+static mut sem_map: Option<HashMap<String, SemInfo>> = None;
+
+lazy_static! {
+    static ref MAP: Mutex<HashMap<String, String>> = {
+        let map:HashMap<String, String> = HashMap::new();
+        Mutex::new(map)
+    };
+}
+
+/*
+pub fn put_key(key: String, value: String) {
+    MAP.lock().unwrap().insert(key, value);
+}
+
+pub fn get_value(key: String) -> Option<String> {
+    let guard = MAP.lock().unwrap();
+    if let Some(value) = guard.get(&key) {
+        return Some(value.to_string());
+    }
+    return None;
+}
+*/
 
 fn get_shm_u32(offset: u32) -> u32 {
     unsafe {
@@ -232,6 +268,10 @@ fn init_sema_map(worker_num: u32, ot: u32) {
 
 #[napi]
 pub async fn master_init(worker_num: u32) {
+    unsafe {
+        sem_map = Some(HashMap::new());
+    }
+
     task::spawn_blocking(move || {
         unsafe {
             MAX_WORKER_NUM = worker_num;
@@ -255,6 +295,9 @@ pub async fn worker_init(worker_num: u32, index: u32) {
     let config = Config::default();
     let file_logger = WriteLogger::new(LevelFilter::Info, config, logfile);
     CombinedLogger::init(vec![file_logger]).unwrap();
+    unsafe {
+        sem_map = Some(HashMap::new());
+    }
 
     task::spawn_blocking(move || {
         unsafe {
