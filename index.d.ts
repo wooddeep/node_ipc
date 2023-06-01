@@ -9,7 +9,11 @@ export function workerInit(workerNum: number, index: number): Promise<void>
 export function processExit(): void
 export function sendData(index: number, data: Buffer, n: number): void
 export function regNodeFunc(callback: (result: string) => void): void
-export function semaCreate(name: string, size: number): Promise<void>
+export function semaCreate(name: string): void
+export function semaOpen(name: string): void
+export function semaClose(name: string): void
+export function semaRequire(name: string): Promise<number>
+export function semaRelease(name: string): Promise<number>
 export function mqCreate(topic: string): Promise<number>
 /**
  * message queue between process map:

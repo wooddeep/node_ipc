@@ -15,6 +15,7 @@ use std::sync::mpsc::channel;
 use std::thread;
 use std::time;
 use std::time::Duration;
+use std::any::Any;
 
 use futures::prelude::*;
 use log::{info, LevelFilter, warn};
@@ -82,7 +83,7 @@ struct SemInfo {
     handler: HANDLE,
 
     #[cfg(target_os = "linux")]
-    id: i32,
+    handler: i32,
 }
 
 static mut mq_tx_array: Vec<MQSender<String>> = Vec::new();
@@ -368,10 +369,91 @@ pub fn reg_node_func(callback: JsFunction) -> Result<()> {
 }
 
 #[napi]
-pub async fn sema_create(name: String, size: u32) {
-    // task::spawn_blocking(move || {
-    //     unsafe {}
-    // }).await.unwrap();
+#[cfg(target_os = "windows")]
+pub fn sema_create(name: String) {
+    unsafe {
+        match sem_map.as_ref() {
+            Some(map) => {},
+            None => {sem_map = Some(HashMap::new())},
+        }
+
+        match sem_map.as_ref().unwrap().get(&name) {
+            Some(sem_info) => {}
+            None => {
+                let handler = ipc::sema_create(&name);
+                let sem_info = SemInfo { handler };
+                sem_map.as_mut().unwrap().insert(String::from(&name), sem_info);
+            }
+        }
+    }
+}
+
+#[napi]
+#[cfg(target_os = "windows")]
+pub fn sema_open(name: String) {
+    unsafe {
+        match sem_map.as_ref().unwrap().get(&name) {
+            Some(sem_info) => {}
+            None => {
+                let handler = ipc::sema_open(&name);
+                let sem_info = SemInfo { handler };
+                sem_map.as_mut().unwrap().insert(String::from(&name), sem_info);
+            }
+        }
+    }
+}
+
+#[napi]
+#[cfg(target_os = "windows")]
+pub fn sema_close(name: String) {
+
+    let handler = ipc::sema_create(&name);
+    let sem_info = ipc::WinSema { handler };
+    let any_val: &dyn std::any::Any = &sem_info;
+    let int_val = any_val.downcast_ref::<ipc::WinSema>();
+
+    unsafe {
+        match sem_map.as_ref().unwrap().get(&name) {
+            Some(sem_info) => {
+                ipc::sema_close(sem_info.handler);
+            }
+            None => {}
+        }
+    }
+}
+
+#[napi]
+#[cfg(target_os = "windows")]
+pub async fn sema_require(name: String) -> i32 {
+    unsafe {
+        let ret = match sem_map.as_ref().unwrap().get(&name) {
+            Some(sem_info) => {
+                ipc::sema_require(sem_info.handler);
+                0
+            }
+            None => {
+                1
+            }
+        };
+        return ret;
+    }
+}
+
+#[napi]
+#[cfg(target_os = "windows")]
+pub async fn sema_release(name: String) -> i32 {
+    unsafe {
+        let ret = match sem_map.as_ref().unwrap().get(&name) {
+            Some(sem_info) => {
+                ipc::sema_release(sem_info.handler);
+                0
+            }
+            None => {
+                1
+            }
+        };
+        return ret;
+    }
 }
 
 
@@ -398,6 +480,7 @@ pub async unsafe fn mq_create(topic: String) -> u32 {
     let index = mq_rx_array.len() - 1;
     return index as u32;
 }
+
 
 /**
  * message queue between process map:

@@ -336,7 +336,7 @@ pub fn do_shm_read_buf(map: LPVOID, offset: u32, size: u32) -> &'static [u8] {
 
 #[cfg(target_os = "windows")]
 pub struct WinSema {
-    handler: HANDLE,
+    pub handler: HANDLE,
 }
 
 #[cfg(target_os = "windows")]
