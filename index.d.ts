@@ -11,6 +11,7 @@ export function workerInit(workerNum: number, index: number): Promise<void>
 export function processExit(): void
 export function sendData(index: number, data: Buffer, n: number): void
 export function regNodeFunc(callback: (result: string) => void): void
+export function mqCreate(topic: string): Promise<number>
 /**
  * message queue between process map:
  * -------------------------------------
@@ -19,8 +20,8 @@ export function regNodeFunc(callback: (result: string) => void): void
  * worker1 <- [worker0, master,  worker2]
  * worker2 <- [worker0, worker1,  master]
 */
-export function listen(callback: (result: string) => void): void
-export function establish(): Promise<void>
+export function listen(callback: (result: string) => void, index: Number): void
+export function establish(topic: string): Promise<number>
 export function publish(targetIndex: number, content: string): void
 export function callNodeFunc(): Promise<number>
 export function init(): void

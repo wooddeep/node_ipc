@@ -16,7 +16,8 @@ class WsServer {
 
     async onMessage(message, socket) {
         let data = JSON.parse(message.toString());
-        await backend.broadcast(JSON.stringify(JSON.stringify(data)))
+        //await backend.broadcast(JSON.stringify(JSON.stringify(data)))
+        console.log(`#TODO: broadcast to other worker process`)
     }
 
     onClose(socket) {

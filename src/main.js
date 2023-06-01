@@ -34,7 +34,7 @@ router.get('/release', async (ctx) => {
 // 加载路由中间件
 app.use(router.routes()).use(router.allowedMethods())
 
-const child_proc_num = 2 // /*os.cpus().length*/
+const child_proc_num = 2; // /*os.cpus().length*/
 
 process.on("SIGINT", () => {
     backend.processExit()
@@ -51,16 +51,13 @@ async function main() {
         cluster.schedulingPolicy = cluster.SCHED_RR;
 
         await backend.masterInit(child_proc_num);
-        backend.listen(async (data) => {
-            console.log(`##[master:${process.pid}] msg from other process | process id: ${process.pid}; data.length = ${data.length}, data = ${data}, time = ${new Date()}`)
-        });
 
-        setTimeout(async () => { // wait for worker's named pipe create
-            await backend.establish();
-            setInterval(() => {
-                backend.publish(1, `msg form worker[${process.pid}]`); // send message to 1st worker
-            }, 3000);
-        }, 3000);
+        let mq_index = await backend.mqCreate("0");
+        console.log(`mq create, index: ${mq_index}`);
+
+        backend.listen(async (data) => {
+            console.log(`##[master:${process.pid}] msg from other process; data.length = ${data.length}, data = ${data}, time = ${new Date()}`)
+        }, mq_index);
 
         let child_map = new Map()
         for (var i = 0, n = child_proc_num; i < n; i += 1) {
@@ -82,14 +79,14 @@ async function main() {
     } else {
 
         await backend.workerInit(child_proc_num, Number.parseInt(process.env["WORKER_INDEX"]));
-        backend.listen(async (data) => {
-            console.log(`##[worker:${process.pid}] msg from other process | process id: ${process.pid}; data.length = ${data.length}, data = ${data}, time = ${new Date()}`)
-        });
 
-        await backend.establish();
+        let sender_index = await backend.establish("0");
         setInterval(() => {
-            backend.publish(0, `msg form worker[${process.pid}]`);
-        }, 3000);
+            let data = `msg form worker[${process.pid}]`
+            console.log(`worker:[${process.pid}], sender index: ${sender_index}, send length: ${data.length}`);
+            backend.publish(sender_index, data);
+        }, 2000);
+
 
         const emitter = new events.EventEmitter();
 
@@ -101,7 +98,6 @@ async function main() {
         });
 
         process.WORKER_INDEX = process.env["WORKER_INDEX"]
-        console.log("WORKER_INDEX", process.env["WORKER_INDEX"])
 
         const websockd = new wsd(emitter);
 

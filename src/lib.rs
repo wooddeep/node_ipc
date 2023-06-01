@@ -23,9 +23,10 @@ use napi::{JsFunction, Result};
 use napi::bindgen_prelude::*;
 use napi::Env;
 use napi::threadsafe_function::ThreadSafeCallContext;
-
 use simplelog::{CombinedLogger, Config, SimpleLogger, TerminalMode, TermLogger, WriteLogger};
 use tokio::task;
+
+use lazy_static::lazy_static;
 
 use sb::Builder;
 use crate::ipc::AbsShm;
@@ -57,9 +58,21 @@ static MSG_CELL_SIZE: u32 = MSG_CELL_META_SIZE + MAX_MSG_CNT_PER_CELL * MAX_MSG_
 
 static mut WORKER_INDEX: u32 = 0;
 static mut MSGQUE_INDEX: u32 = 0;
-static mut mq_tx_array : Vec<Sender<String>> = Vec::new();
 
 static mut ready: AtomicBool = AtomicBool::new(false);
+
+struct MQSender<T> {
+    topic: String,
+    sender: Sender<T>,
+}
+
+struct MQReceiver<T> {
+    topic: String,
+    receiver: Receiver<T>,
+}
+
+static mut mq_tx_array: Vec<MQSender<String>> = Vec::new();
+static mut mq_rx_array: Vec<MQReceiver<String>> = Vec::new();
 
 #[napi]
 pub async fn test_sema_release() {
@@ -77,11 +90,19 @@ pub async fn test_sema_require() {
 
 fn get_shm_u32(offset: u32) -> u32 {
     unsafe {
-        let head_box = shm_handler.as_ref().unwrap().read_buf(offset, 4).unwrap();
-        let mut head_buf: [u8; 4] = [0; 4];
-        head_buf.copy_from_slice(&head_box[..4]);
-        let head_index = u32::from_be_bytes(head_buf);
-        return head_index;
+        let value = match shm_handler.as_ref().unwrap().read_buf(offset, 4) {
+            None => {
+                0
+            }
+            _ => {
+                let head_box = shm_handler.as_ref().unwrap().read_buf(offset, 4).unwrap();
+                let mut head_buf: [u8; 4] = [0; 4];
+                head_buf.copy_from_slice(&head_box[..4]);
+                let head_index = u32::from_be_bytes(head_buf);
+                head_index
+            }
+        };
+        value
     }
 }
 
@@ -107,7 +128,6 @@ fn meta_offset(writer_index: u32, reader_index: u32) -> u32 {
     }
 }
 
-// broadcast message to the brothers
 #[napi]
 pub async fn broadcast(input: String) {
     unsafe {
@@ -234,6 +254,9 @@ pub async fn master_init(worker_num: u32) {
             shm_handler = Some(Box::new(abs_shm));
 
             init_sema_map(worker_num, 0);
+
+            //mq_data_relay = Some(HashMap::new());
+
             ready.store(true, Ordering::SeqCst);
         }
     }).await.unwrap();
@@ -257,6 +280,7 @@ pub async fn worker_init(worker_num: u32, index: u32) {
             shm_handler = Some(Box::new(abs_shm));
 
             init_sema_map(worker_num, 1);
+
             ready.store(true, Ordering::SeqCst);
         }
     }).await.unwrap();
@@ -300,6 +324,7 @@ pub fn reg_node_func(callback: JsFunction) -> Result<()> {
         loop {
             unsafe {
                 let inited = ready.load(Ordering::SeqCst);
+
                 if inited {
                     let data = proc_shm_read();
                     tsfn.call(data, ThreadsafeFunctionCallMode::NonBlocking);
@@ -314,6 +339,27 @@ pub fn reg_node_func(callback: JsFunction) -> Result<()> {
 
 // query named pipe in windows
 // $ handle -a \Device\NamedPipe | grep -i ipc_pipe
+#[napi]
+pub async unsafe fn mq_create(topic: String) -> u32 {
+    let notifier: (Sender<bool>, Receiver<bool>) = channel();
+    let relay: (Sender<String>, Receiver<String>) = channel();
+    let relay_tx = relay.0.clone();
+    let notifier_tx = notifier.0.clone();
+
+    mq_rx_array.push(MQReceiver { topic: topic.clone(), receiver: relay.1 });
+
+    let t1 = thread::spawn(move || {
+        ipc::mq_server(topic, relay_tx, notifier_tx); // 启动mq server
+    });
+
+    match notifier.1.recv() {
+        Ok(msg) => {}
+        _ => {}
+    }
+
+    let index = mq_rx_array.len() - 1;
+    return index as u32;
+}
 
 /**
  * message queue between process map:
@@ -323,33 +369,18 @@ pub fn reg_node_func(callback: JsFunction) -> Result<()> {
  * worker1 <- [worker0, master,  worker2]
  * worker2 <- [worker0, worker1,  master]
  */
-#[napi(ts_args_type = "callback: (result: string) => void")]
-pub unsafe fn listen(callback: JsFunction) -> Result<()> {
-
+#[napi(ts_args_type = "callback: (result: string) => void, index: Number")]
+pub unsafe fn listen(callback: JsFunction, index: u32) -> Result<()> {
     let tsfn: ThreadsafeFunction<String, ErrorStrategy::Fatal> = callback
         .create_threadsafe_function(0, |ctx: ThreadSafeCallContext<String>| {
             let data = ctx.env.create_string(ctx.value.as_str());
             data.map(|v| vec![v])
         })?;
 
-    let (tx, rx): (Sender<String>, Receiver<String>) = channel();
-
-    for msgque_index in 0..MAX_WORKER_NUM + 1 {
-        if msgque_index == MSGQUE_INDEX {
-            continue;
-        }
-        let tx_clone = tx.clone();
-
-        let t1 = thread::spawn(move || {
-            ipc::mq_server(MSGQUE_INDEX, msgque_index, tx_clone); // 启动mq server
-        });
-    }
-
-    // start thread to receive message from other process
     thread::spawn(move || {
         loop {
             unsafe {
-                match rx.recv() {
+                match mq_rx_array.get(index as usize).unwrap().receiver.recv() {
                     Ok(msg) => {
                         tsfn.call(msg, ThreadsafeFunctionCallMode::NonBlocking);
                     }
@@ -364,28 +395,48 @@ pub unsafe fn listen(callback: JsFunction) -> Result<()> {
     Ok(())
 }
 
+
 #[napi]
-pub async unsafe fn establish() {
+#[cfg(target_os = "windows")]
+pub async unsafe fn establish(topic: String) -> u32 {
+    let notifier: (Sender<bool>, Receiver<bool>) = channel();
     task::spawn_blocking(move || {
-        for msgque_index in 0..MAX_WORKER_NUM + 1 {
+        let (tx, rx): (Sender<String>, Receiver<String>) = channel();
 
-            let (tx, rx): (Sender<String>, Receiver<String>) = channel();
-            mq_tx_array.push(tx);
+        let notifier_tx = notifier.0.clone();
 
-            if msgque_index == MSGQUE_INDEX {
-                continue;
-            }
+        mq_tx_array.push(MQSender { topic: topic.clone(), sender: tx });
 
-            let t1 = thread::spawn(move || {
-                ipc::mq_connect(msgque_index, MSGQUE_INDEX, rx); // start mq server
-            });
-        }
+        let t1 = thread::spawn(move || {
+            ipc::mq_connect(topic.clone(), rx, notifier_tx); // start mq server
+        });
     }).await.unwrap();
+
+    match notifier.1.recv() {
+        Ok(msg) => {}
+        _ => {}
+    }
+
+    let index = mq_tx_array.len() - 1;
+    return index as u32;
 }
 
 #[napi]
+#[cfg(target_os = "linux")]
+pub async unsafe fn establish(topic: String) -> u32 {
+    return 0;
+}
+
+#[napi]
+#[cfg(target_os = "windows")]
 pub unsafe fn publish(target_index: u32, content: String) {
-    mq_tx_array.get(target_index as usize).as_ref().unwrap().send(content);
+    mq_tx_array.get(target_index as usize).as_ref().unwrap().sender.send(content);
+}
+
+#[napi]
+#[cfg(target_os = "linux")]
+pub unsafe fn publish(target_index: u32, content: String) {
+    ipc::mq_publish(target_index, content);
 }
 
 #[napi]

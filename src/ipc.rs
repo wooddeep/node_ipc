@@ -2,7 +2,7 @@ use std::ffi::OsStr;
 use std::fs::OpenOptions;
 use std::io::{Read, Write};
 use std::os::raw::c_void;
-use std::os::windows::io::{AsRawHandle, FromRawHandle};
+
 use std::path::Path;
 use std::ptr;
 use std::ptr::null_mut;
@@ -16,6 +16,8 @@ use std::sync::Arc;
 use std::time;
 
 #[cfg(target_os = "windows")]
+use std::os::windows::io::{AsRawHandle, FromRawHandle};
+#[cfg(target_os = "windows")]
 use std::os::windows::ffi::OsStrExt;
 #[cfg(target_os = "windows")]
 use std::os::windows::fs::OpenOptionsExt;
@@ -25,7 +27,7 @@ use winapi::shared::minwindef::{DWORD, FALSE, TRUE};
 #[cfg(target_os = "windows")]
 use winapi::shared::minwindef::LPVOID;
 #[cfg(target_os = "windows")]
-use winapi::shared::winerror::{ERROR_PIPE_CONNECTED, ERROR_SUCCESS};
+use winapi::shared::winerror::{ERROR_PIPE_CONNECTED, ERROR_PIPE_BUSY, ERROR_SUCCESS};
 #[cfg(target_os = "windows")]
 use winapi::um::errhandlingapi::GetLastError;
 #[cfg(target_os = "windows")]
@@ -61,18 +63,33 @@ use winapi::um::winnt::PAGE_READWRITE;
 #[cfg(target_os = "windows")]
 use winapi::um::winnt::SEMAPHORE_ALL_ACCESS;
 
+use futures::StreamExt as _;
+use tokio::io::{split, AsyncReadExt, AsyncWriteExt};
+use parity_tokio_ipc::{Endpoint, SecurityAttributes};
+
 #[cfg(target_os = "linux")]
 extern crate libc;
 
 #[cfg(target_os = "linux")]
 use std::ffi::CString;
 #[cfg(target_os = "linux")]
-use libc::{IPC_CREAT, IPC_EXCL, IPC_RMID, S_IRUSR, S_IWUSR, semctl, semget, semop, SHM_R, SHM_W, shmat, shmctl, shmdt, shmget};
+use libc::{IPC_CREAT, IPC_EXCL, IPC_RMID, S_IRUSR, S_IWUSR, semctl, semget, semop, SHM_R, SHM_W, c_int, c_long, msgget, msgsnd, msgrcv, shmat, shmctl, shmdt, shmget};
 
 #[cfg(target_os = "linux")]
 static SETVAL: i32 = 16;
 // cannot found SETVAL definition in libc, define here .
 static SEM_UNDO: i16 = 1;
+
+#[cfg(target_os = "linux")]
+const KEY: c_int = 1234;
+const MSG_SIZE: usize = 1024;
+
+#[repr(C)]
+#[cfg(target_os = "linux")]
+struct MsgBuf {
+    mtype: c_long,
+    mtext: [libc::c_char; MSG_SIZE],
+}
 
 pub enum Operator {
     CREATE,
@@ -414,114 +431,83 @@ pub fn sema_close(semaphore: HANDLE) -> bool {
 //  windows message queue implement!!!
 ///////////////////////////////////////////////////////////////////////////
 
-#[cfg(target_os = "windows")]
-fn create_pipe_name(own_id: u32, peer_id: u32) -> Vec<u16> {
-    let name_str = format!("\\\\.\\pipe\\ipc_pipe-{}-{}-", own_id, peer_id);
-    let mut name = name_str.encode_utf16().collect::<Vec<u16>>();
-    let pos = name.len() as usize;
-    name[pos - 1] = 0;
-    return name;
+fn str_len(buf: &[u8], max: usize) -> usize {
+    for i in 0..max {
+        if buf[i] == 0 {
+            return i;
+        }
+    }
+    return max;
 }
 
-#[cfg(target_os = "windows")]
-pub fn mq_server(own_id: u32, peer_id: u32, sender: Sender<String>) {
-    let pipe_handle = unsafe {
-        let mut name = create_pipe_name(own_id, peer_id);
-        CreateNamedPipeW(
-            name.as_ptr(),
-            PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
-            PIPE_TYPE_BYTE,
-            1,
-            1024,
-            1024,
-            0,
-            std::ptr::null_mut(),
-        )
-    };
+async fn run_server(path: String, sender: Sender<String>, notifier: Sender<bool>) {
+    let mut endpoint = Endpoint::new(path);
+    endpoint.set_security_attributes(SecurityAttributes::allow_everyone_create().unwrap());
+    let incoming = endpoint.incoming().expect("failed to open new socket");
+    futures::pin_mut!(incoming);
+    notifier.send(true);
 
-    if pipe_handle == winapi::um::handleapi::INVALID_HANDLE_VALUE {
-        panic!("Failed to create named pipe");
-    }
-    println!("## to create ipc_pipe-{}-{} ok", own_id, peer_id);
+    while let Some(result) = incoming.next().await {
+        match result {
+            Ok(stream) => {
+                let (mut reader, mut writer) = split(stream);
+                let send_clone = sender.clone();
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 1024];
+                    loop {
+                        for i in 0..1024 {
+                            buf[i] = 0;
+                        }
 
-    let mut result = unsafe { ConnectNamedPipe(pipe_handle, std::ptr::null_mut()) };
-    if result == 0 {
-        panic!("failed to wait incoming named pipe");
-    }
+                        if let Err(_) = reader.read(&mut buf).await {
+                            println!("Closing socket");
+                            break;
+                        }
 
-    loop {
-        let mut buf = [0u8; 1024];
-        let mut byte_read = 0;
-        let read_success = unsafe {
-            ReadFile(
-                pipe_handle,
-                buf.as_mut_ptr() as *mut _,
-                buf.len() as u32,
-                &mut byte_read,
-                std::ptr::null_mut(),
-            )
-        };
-
-        if read_success == 0 {
-            let error_code = std::io::Error::last_os_error().raw_os_error().unwrap();
-            if error_code == ERROR_PIPE_CONNECTED as i32 {
-                break;
-            } else {
-                unsafe {
-                    CloseHandle(pipe_handle);
-                }
-                thread::spawn(move || {
-                    mq_server(own_id, peer_id, sender);
+                        let size = str_len(&buf, 1024);
+                        if size > 0 {
+                            let data = std::str::from_utf8(&buf[..size]).unwrap();
+                            send_clone.send(String::from(data)).unwrap();
+                        }
+                    }
                 });
-                panic!("fail to read from named pipe");
             }
+            _ => unreachable!("ideally")
         }
-        let req_str = std::str::from_utf8(&buf[..byte_read as usize]).unwrap();
-
-        // 通过线程间通信, 把消息发送给js
-        sender.send(String::from(req_str)).unwrap();
     }
 }
 
 #[cfg(target_os = "windows")]
-pub fn mq_connect(own_id: u32, peer_id: u32, receiver: Receiver<String>) {
-    let mut pipe_handle = unsafe {
-        let mut name = create_pipe_name(own_id, peer_id);
-        let handle = CreateFileW(
-            name.as_ptr(),
-            GENERIC_READ | GENERIC_WRITE,
-            FILE_SHARE_READ,
-            ptr::null_mut(),
-            OPEN_EXISTING,
-            FILE_ATTRIBUTE_NORMAL,
-            ptr::null_mut(),
-        );
+#[tokio::main(flavor = "current_thread")]
+pub async fn mq_server(topic: String, sender: Sender<String>, notifier: Sender<bool>) {
+    let path = format!("\\\\.\\pipe\\ipc_pipe-{}", topic);
+    run_server(path, sender, notifier).await
+}
 
-        handle
-    };
+#[cfg(target_os = "windows")]
+#[tokio::main(flavor = "current_thread")]
+pub async fn mq_connect(topic: String, receiver: Receiver<String>, notifier: Sender<bool>) {
+    let path = format!("\\\\.\\pipe\\ipc_pipe-{}", topic);
 
-    println!("## to connect ipc_pipe-{}-{} ok", own_id, peer_id);
+    let mut client = Endpoint::connect(&path).await
+        .expect("Failed to connect client.");
+
+    notifier.send(true); // connected ok!
 
     loop {
-        unsafe {
-            match receiver.recv() {
-                Ok(msg) => {
-                    let result = unsafe {
-                        WriteFile(pipe_handle,
-                                  msg.as_ptr() as *const _,
-                                  msg.len() as u32,
-                                  std::ptr::null_mut(),
-                                  std::ptr::null_mut(),
-                        )
-                    };
-                }
-                _ => {
-                    thread::sleep(Duration::from_secs_f32(3.5));
-                }
+        match receiver.recv() {
+            Ok(msg) => {
+                client.write_all(msg.as_bytes()).await.expect("Unable to write message to client");
+            }
+            _ => {
+                thread::sleep(Duration::from_secs_f32(3.5));
             }
         }
     }
 }
+
+#[cfg(target_os = "windows")]
+pub fn mq_delete(own_id: u32, target_index: u32) {}
 
 ///////////////////////////////////////////////////////////////////////////
 //  linux share memory implement!!!
@@ -770,6 +756,95 @@ pub fn shm_clearup(shm_id: i32) {
         eprintln!("Failed to delete shared memory: {}", std::io::Error::last_os_error());
     }
 }
+
+///////////////////////////////////////////////////////////////////////////
+//  linux message queue implement!!!
+///////////////////////////////////////////////////////////////////////////
+#[cfg(target_os = "linux")]
+pub fn mq_server(own_id: u32, peer_id: u32, sender: Sender<String>) {
+    // create or get message queue
+    let msg_queue_id = unsafe { msgget(KEY + own_id as i32, 0o666 | libc::IPC_CREAT | libc::IPC_EXCL) };
+    if msg_queue_id == -1 {
+        let err = std::io::Error::last_os_error().raw_os_error().unwrap();
+        if err != 17 { // file existed
+            println!("Failed to create or get message queue");
+            println!("[0] Failed to create msgque: {}", std::io::Error::last_os_error());
+        }
+        return;
+    }
+
+    // receive message
+    let mut received_msg_buf = MsgBuf {
+        mtype: 0,
+        mtext: [0; MSG_SIZE],
+    };
+
+    let mut u8_array: [u8; MSG_SIZE] = [0; MSG_SIZE];
+
+    loop {
+        let count = unsafe {
+            msgrcv(
+                msg_queue_id,
+                &mut received_msg_buf as *mut MsgBuf as *mut c_void,
+                MSG_SIZE,
+                0,
+                0,
+            )
+        };
+
+        if count == -1 {
+            println!("Failed to receive message");
+            return;
+        }
+
+        for i in 0..count {
+            u8_array[i as usize] = received_msg_buf.mtext[i as usize] as u8;
+        }
+        u8_array[count as usize] = 0;
+
+        let result = std::str::from_utf8(&u8_array).unwrap();
+
+        sender.send(String::from(result)).unwrap();
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub fn mq_publish(target_index: u32, content: String) {
+    // create or get message queue
+
+    let msg_queue_id = unsafe { msgget(KEY + target_index as i32, 0o666) };
+    if msg_queue_id == -1 {
+        println!("[1] Failed to create or get message queue");
+        return;
+    }
+
+    // send message
+    let mut msg_buf = MsgBuf {
+        mtype: 1,
+        mtext: [0; MSG_SIZE],
+    };
+
+    let msg_text = CString::new(content.as_bytes().to_vec()).unwrap();
+
+    unsafe {
+        let len = msg_text.as_bytes().len();
+        ptr::copy_nonoverlapping(
+            msg_text.as_ptr() as *const libc::c_char,
+            msg_buf.mtext.as_mut_ptr(),
+            len,
+        );
+
+        let result = msgsnd(msg_queue_id, &msg_buf as *const MsgBuf as *const c_void, len, 0);
+        if result == -1 {
+            println!("Failed to send message");
+            return;
+        }
+        println!("publish to {} {}, ret: {}", target_index, &content, result);
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub fn mq_delete(own_id: u32, target_index: u32) {}
 
 ///////////////////////////////////////////////////////////////////////
 //  export function !!!
