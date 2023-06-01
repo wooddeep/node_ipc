@@ -20,21 +20,11 @@ router.get('/release', async (ctx) => {
     ctx.body = 'testSemaRelease response'
 });
 
-// router.get('/read', async (ctx) => {
-//     backend.testShmRead()
-//     ctx.body = 'testShmRead response'
-// });
-//
-// //  curl -H "Content-Type:application/json" -X POST http://127.0.0.1:5050/write -d '{"key": "val"}'
-// router.post('/write', async (ctx) => {
-//     await backend.testShmWrite(JSON.stringify(ctx.request.body))
-//     ctx.body = 'testShmWrite response'
-// })
 
 // 加载路由中间件
 app.use(router.routes()).use(router.allowedMethods())
 
-const child_proc_num = 2; // /*os.cpus().length*/
+const child_proc_num = 3; // /*os.cpus().length*/
 
 process.on("SIGINT", () => {
     backend.processExit()
@@ -83,7 +73,7 @@ async function main() {
         let sender_index = await backend.establish("0");
         setInterval(() => {
             let data = `msg form worker[${process.pid}]`
-            console.log(`worker:[${process.pid}], sender index: ${sender_index}, send length: ${data.length}`);
+            //console.log(`worker:[${process.pid}], sender index: ${sender_index}, send length: ${data.length}`);
             backend.publish(sender_index, data);
         }, 2000);
 

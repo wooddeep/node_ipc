@@ -35,11 +35,12 @@
   "dependencies": {
     "koa": "^2.14.2",
     "koa-bodyparser": "^4.4.0",
-    "koa-router": "^12.0.0"
+    "koa-router": "^12.0.0",
+    "ws": "^8.13.0"
   },
   "optionalDependencies": {
-    "@wooddeep/node_ipc-win32-x64-msvc": "0.1.8",
     "@wooddeep/node_ipc-darwin-x64": "0.1.8",
-    "@wooddeep/node_ipc-linux-x64-gnu": "0.1.8"
+    "@wooddeep/node_ipc-linux-x64-gnu": "0.1.8",
+    "@wooddeep/node_ipc-win32-x64-msvc": "0.1.8"
   }
 }

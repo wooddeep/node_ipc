@@ -318,7 +318,7 @@ startTest();
 ```
 5. start the websocket server:
 ```bash
-node test.js
+node main.js
 ```
 6. start two websocket client:
 ```bash
