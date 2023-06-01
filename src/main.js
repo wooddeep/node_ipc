@@ -11,12 +11,12 @@ let router = new Router()
 app.use(bodyParser())
 
 router.get('/require', async (ctx) => {
-    await backend.testSemaRequire()
+    //await backend.testSemaRequire()
     ctx.body = 'testSemaRequire response'
 });
 
 router.get('/release', async (ctx) => {
-    await backend.testSemaRelease()
+    //await backend.testSemaRelease()
     ctx.body = 'testSemaRelease response'
 });
 

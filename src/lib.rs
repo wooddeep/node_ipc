@@ -74,19 +74,6 @@ struct MQReceiver<T> {
 static mut mq_tx_array: Vec<MQSender<String>> = Vec::new();
 static mut mq_rx_array: Vec<MQReceiver<String>> = Vec::new();
 
-#[napi]
-pub async fn test_sema_release() {
-    task::spawn_blocking(move || {
-        unsafe {}
-    }).await.unwrap();
-}
-
-#[napi]
-pub async fn test_sema_require() {
-    task::spawn_blocking(move || {
-        unsafe {}
-    }).await.unwrap();
-}
 
 fn get_shm_u32(offset: u32) -> u32 {
     unsafe {
@@ -336,6 +323,14 @@ pub fn reg_node_func(callback: JsFunction) -> Result<()> {
 
     Ok(())
 }
+
+#[napi]
+pub async fn sema_create(name: String, size: u32) {
+    // task::spawn_blocking(move || {
+    //     unsafe {}
+    // }).await.unwrap();
+}
+
 
 // query named pipe in windows
 // $ handle -a \Device\NamedPipe | grep -i ipc_pipe
