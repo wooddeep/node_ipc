@@ -41,7 +41,7 @@ process.on("beforeExit", (code) => {
 
 async function main() {
 
-    await backend.shmCreate(process.argv[3], 1024);
+    //await backend.shmCreate(process.argv[3], 1024);
     await backend.shmOpen(process.argv[3], 1024);
 
     let port = Number.parseInt(process.argv[2]);

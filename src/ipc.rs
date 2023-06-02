@@ -209,6 +209,8 @@ pub fn shm_open(size: u32, name: String) -> (LPVOID, HANDLE) {
 
     if handle.is_null() {
         log::info!("OpenFileMappingW failed");
+        println!("OpenFileMappingW failed, error code: {}", std::io::Error::last_os_error());
+        return shm_create(size, name);
     }
 
     let map = unsafe {
