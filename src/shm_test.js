@@ -7,15 +7,24 @@ const app = new Koa()
 let router = new Router()
 app.use(bodyParser())
 
-router.post('/write', async (ctx) => {
-    var data = ctx.request.body;
-    backend.shmWriteStr("test", 0, "hello world!")
+router.get('/write', async (ctx) => {
+    let shm_name = ctx.request.query["shm_name"];
+    shm_name = shm_name == undefined ? "RustMapping" : shm_name;
+
+    let content = ctx.request.query["content"];
+    content = content == undefined ? "hello world!" : content;
+
+    backend.shmWriteStr(shm_name, 0, content)
     ctx.body = 'semaRequire response'
 });
 
 router.get('/read', async (ctx) => {
-    let data = backend.shmReadStr("test", 0, 1024);
-    ctx.body = data.trim()
+    let shm_name = ctx.request.query["shm_name"];
+    shm_name = shm_name == undefined ? "RustMapping" : shm_name;
+
+    let data = backend.shmReadStr(shm_name, 0, 1024);
+
+    ctx.body = data
 });
 
 app.use(router.routes()).use(router.allowedMethods())
@@ -32,11 +41,8 @@ process.on("beforeExit", (code) => {
 
 async function main() {
 
-    if (process.argv[3] == "shm_open") {
-        await backend.shmOpen("RustMapping", 1024);
-    } else {
-        await backend.shmCreate("RustMapping", 1024);
-    }
+    await backend.shmCreate(process.argv[3], 1024);
+    await backend.shmOpen(process.argv[3], 1024);
 
     let port = Number.parseInt(process.argv[2]);
     port = port == undefined ? 3000 : port;

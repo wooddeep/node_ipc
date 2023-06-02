@@ -224,9 +224,7 @@ pub fn shm_open(size: u32, name: String) -> (LPVOID, HANDLE) {
     if map.is_null() {
         log::info!("MapViewOfFile failed");
     }
-
     println!("--01-- handler: {:p}, address: {:p}, name: {}", map, handle, name);
-
     return (map, handle);
 }
 

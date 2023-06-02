@@ -207,7 +207,6 @@ pub fn shm_open(name: String, size: u32) {
             None => {
                 let handler = ipc::shm_open(size, name.clone());
                 let shm_info = ShmInfo { handler: handler.1, address: handler.0 };
-                println!("--1-- handler: {:p}, address: {:p}", handler.1, handler.0);
                 shm_map.as_mut().unwrap().insert(name, shm_info);
             }
         }
