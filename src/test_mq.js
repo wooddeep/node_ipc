@@ -1,28 +1,7 @@
 const cluster = require("cluster")
-const Router = require('koa-router')
-const Koa = require('koa')
-const bodyParser = require('koa-bodyparser')
+
 const backend = require("../index.js")
-const wsd = require("./wsd")
 const events = require("events")
-
-const app = new Koa()
-let router = new Router()
-app.use(bodyParser())
-
-router.get('/require', async (ctx) => {
-    //await backend.testSemaRequire()
-    ctx.body = 'testSemaRequire response'
-});
-
-router.get('/release', async (ctx) => {
-    //await backend.testSemaRelease()
-    ctx.body = 'testSemaRelease response'
-});
-
-
-// 加载路由中间件
-app.use(router.routes()).use(router.allowedMethods())
 
 const child_proc_num = 3; // /*os.cpus().length*/
 
@@ -39,8 +18,6 @@ process.on("beforeExit", (code) => {
 async function main() {
     if (cluster.isMaster) { // main process
         cluster.schedulingPolicy = cluster.SCHED_RR;
-
-        await backend.masterInit(child_proc_num);
 
         let mq_index = await backend.mqCreate("0");
         console.log(`mq create, index: ${mq_index}`);
@@ -68,30 +45,13 @@ async function main() {
 
     } else {
 
-        await backend.workerInit(child_proc_num, Number.parseInt(process.env["WORKER_INDEX"]));
-
         let sender_index = await backend.establish("0");
         setInterval(() => {
             let data = `msg form worker[${process.pid}]`
             //console.log(`worker:[${process.pid}], sender index: ${sender_index}, send length: ${data.length}`);
             backend.publish(sender_index, data);
         }, 2000);
-
-
-        const emitter = new events.EventEmitter();
-
-        backend.regNodeFunc(async (data) => {
-            if (data.length > 2) {
-                //console.log(`## process id: ${process.pid}; data.length = ${data.length}, data = ${data}, time = ${new Date()}`)
-                emitter.emit("peer", data)
-            }
-        });
-
-        process.WORKER_INDEX = process.env["WORKER_INDEX"]
-
-        const websockd = new wsd(emitter);
-
-        websockd.start(emitter);
+        //const emitter = new events.EventEmitter();
     }
 }
 
