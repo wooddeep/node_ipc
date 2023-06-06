@@ -8,13 +8,13 @@ let router = new Router()
 app.use(bodyParser())
 
 router.get('/require', async (ctx) => {
-    await backend.semaRequire("test")
-    ctx.body = 'semaRequire response'
+    await backend.semRequire("test")
+    ctx.body = 'semRequire response'
 });
 
 router.get('/release', async (ctx) => {
-    await backend.semaRelease("test")
-    ctx.body = 'semaRelease response'
+    await backend.semRelease("test")
+    ctx.body = 'semRelease response'
 });
 
 app.use(router.routes()).use(router.allowedMethods())

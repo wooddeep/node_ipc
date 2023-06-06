@@ -158,6 +158,14 @@ impl AbsShm for WinShm {
 }
 
 #[cfg(target_os = "windows")]
+fn create_ipc_name(name_str: &str) -> Vec<u16> {
+    let mut name = name_str.encode_utf16().collect::<Vec<u16>>();
+    let pos = name.len() as usize;
+    name[pos - 1] = 0;
+    return name;
+}
+
+#[cfg(target_os = "windows")]
 pub fn shm_create(size: u32, name: String) -> (LPVOID, HANDLE) {
     let mapping_name = format!("{}", name.clone());
     let mapping_size = size.try_into().unwrap();
@@ -169,7 +177,7 @@ pub fn shm_create(size: u32, name: String) -> (LPVOID, HANDLE) {
             PAGE_READWRITE,
             0,
             mapping_size,
-            mapping_name.encode_utf16().collect::<Vec<_>>().as_ptr(),
+            create_ipc_name(&mapping_name).as_ptr(),
         )
     };
 
@@ -203,13 +211,13 @@ pub fn shm_open(size: u32, name: String) -> (LPVOID, HANDLE) {
         OpenFileMappingW(
             FILE_MAP_ALL_ACCESS,
             0,
-            mapping_name.encode_utf16().collect::<Vec<_>>().as_ptr(),
+            create_ipc_name(&mapping_name).as_ptr(),
         )
     };
 
     if handle.is_null() {
         log::info!("OpenFileMappingW failed");
-        println!("OpenFileMappingW failed, error code: {}", std::io::Error::last_os_error());
+        println!("OpenFileMappingW [{}] failed, error code: {}", mapping_name, std::io::Error::last_os_error());
         return shm_create(size, name);
     }
 
@@ -247,6 +255,8 @@ pub fn do_shm_write(map: LPVOID, offset: u32, buffer: &[u8]) {
 
     unsafe {
         let mut dst = map as *mut c_void;
+        let address = (map as usize + offset as usize + 1) as *mut u8;
+        ptr::write_bytes(address, 0, 10);
         ptr::copy_nonoverlapping(data_ptr, dst.offset(offset as isize), buffer.len());
     }
 }
