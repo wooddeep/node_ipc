@@ -252,7 +252,7 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { processExit, semCreate, semOpen, semClose, semRequire, semRelease, shmCreate, shmOpen, shmClose, shmReadBuf, shmReadStr, shmWriteStr, mqCreate, listen, establish, publish, callNodeFunc, init } = nativeBinding
+const { processExit, semCreate, semOpen, semClose, semRequire, semRelease, shmCreate, shmOpen, shmClose, shmReadBuf, shmReadStr, shmWriteStr, mqCreate, mqListen, mqEstablish, mqPublish, callNodeFunc, init } = nativeBinding
 
 module.exports.processExit = processExit
 module.exports.semCreate = semCreate
@@ -267,8 +267,8 @@ module.exports.shmReadBuf = shmReadBuf
 module.exports.shmReadStr = shmReadStr
 module.exports.shmWriteStr = shmWriteStr
 module.exports.mqCreate = mqCreate
-module.exports.listen = listen
-module.exports.establish = establish
-module.exports.publish = publish
+module.exports.mqListen = mqListen
+module.exports.mqEstablish = mqEstablish
+module.exports.mqPublish = mqPublish
 module.exports.callNodeFunc = callNodeFunc
 module.exports.init = init

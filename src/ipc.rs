@@ -1,33 +1,44 @@
+#[cfg(target_os = "linux")]
+extern crate libc;
+
+use std::collections::hash_map::DefaultHasher;
+#[cfg(target_os = "linux")]
+use std::ffi::CString;
 use std::ffi::OsStr;
 use std::fs::OpenOptions;
+use std::hash::{Hash, Hasher};
 use std::io::{Read, Write};
 use std::os::raw::c_void;
-
-use std::path::Path;
-use std::ptr;
-use std::ptr::null_mut;
-use std::thread;
-use std::time::Duration;
-use futures::StreamExt as _;
-use napi::{CallContext, JsNull, JsNumber};
-use regex::Regex;
-use std::sync::mpsc::{Sender, Receiver};
-use std::sync::Arc;
-use std::time;
-
-#[cfg(target_os = "windows")]
-use std::os::windows::io::{AsRawHandle, FromRawHandle};
 #[cfg(target_os = "windows")]
 use std::os::windows::ffi::OsStrExt;
 #[cfg(target_os = "windows")]
 use std::os::windows::fs::OpenOptionsExt;
+#[cfg(target_os = "windows")]
+use std::os::windows::io::{AsRawHandle, FromRawHandle};
+use std::path::Path;
+use std::ptr;
+use std::ptr::null_mut;
+use std::sync::Arc;
+use std::sync::mpsc::{Receiver, Sender};
+use std::thread;
+use std::time;
+use std::time::Duration;
+
+use futures::StreamExt as _;
+use futures::StreamExt as _;
+#[cfg(target_os = "linux")]
+use libc::{c_int, c_long, IPC_CREAT, IPC_EXCL, IPC_RMID, msgget, msgrcv, msgsnd, S_IRUSR, S_IWUSR, semctl, semget, semop, SHM_R, SHM_W, shmat, shmctl, shmdt, shmget};
+use napi::{CallContext, JsNull, JsNumber};
+use parity_tokio_ipc::{Endpoint, SecurityAttributes};
+use regex::Regex;
+use tokio::io::{AsyncReadExt, AsyncWriteExt, split};
 #[cfg(target_os = "windows")]
 #[cfg(target_os = "windows")]
 use winapi::shared::minwindef::{DWORD, FALSE, TRUE};
 #[cfg(target_os = "windows")]
 use winapi::shared::minwindef::LPVOID;
 #[cfg(target_os = "windows")]
-use winapi::shared::winerror::{ERROR_PIPE_CONNECTED, ERROR_PIPE_BUSY, ERROR_SUCCESS};
+use winapi::shared::winerror::{ERROR_PIPE_BUSY, ERROR_PIPE_CONNECTED, ERROR_SUCCESS};
 #[cfg(target_os = "windows")]
 use winapi::um::errhandlingapi::GetLastError;
 #[cfg(target_os = "windows")]
@@ -63,26 +74,11 @@ use winapi::um::winnt::PAGE_READWRITE;
 #[cfg(target_os = "windows")]
 use winapi::um::winnt::SEMAPHORE_ALL_ACCESS;
 
-use futures::StreamExt as _;
-use tokio::io::{split, AsyncReadExt, AsyncWriteExt};
-use parity_tokio_ipc::{Endpoint, SecurityAttributes};
-
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
-
 pub fn str_to_key(s: &str) -> i32 {
     let mut hasher = DefaultHasher::new();
     s.hash(&mut hasher);
     hasher.finish() as i32
 }
-
-#[cfg(target_os = "linux")]
-extern crate libc;
-
-#[cfg(target_os = "linux")]
-use std::ffi::CString;
-#[cfg(target_os = "linux")]
-use libc::{IPC_CREAT, IPC_EXCL, IPC_RMID, S_IRUSR, S_IWUSR, semctl, semget, semop, SHM_R, SHM_W, c_int, c_long, msgget, msgsnd, msgrcv, shmat, shmctl, shmdt, shmget};
 
 #[cfg(target_os = "linux")]
 static SETVAL: i32 = 16;
@@ -754,7 +750,6 @@ pub fn mq_server(topic: String, sender: Sender<String>, notifier: Sender<bool>) 
         }
     }
 
-
     notifier.send(true);
     // receive message
     let mut received_msg_buf = MsgBuf {
@@ -829,88 +824,3 @@ pub fn mq_publish(key: u32, content: String) {
 #[cfg(target_os = "linux")]
 pub fn mq_delete(own_id: u32, target_index: u32) {}
 
-///////////////////////////////////////////////////////////////////////
-//  export function !!!
-///////////////////////////////////////////////////////////////////////
-
-pub fn abs_shm_create(name: &str, size: u32) -> impl AbsShm {
-    #[cfg(target_os = "windows")]
-        {
-            let mut shm = WinShm {
-                handler: (ptr::null_mut(), ptr::null_mut()),
-            };
-            shm.create(name, size);
-            shm
-        }
-
-    #[cfg(target_os = "linux")]
-        {
-            let mut shm = LinShm {
-                handler: null_mut(),
-                shm_id: 0,
-            };
-            shm.create(name, size);
-            shm
-        }
-}
-
-pub fn abs_shm_open(name: &str, size: u32) -> impl AbsShm {
-    #[cfg(target_os = "windows")]
-        {
-            let mut shm = WinShm {
-                handler: (ptr::null_mut(), ptr::null_mut()),
-            };
-            shm.open(name, size);
-            shm
-        }
-
-    #[cfg(target_os = "linux")]
-        {
-            let mut shm = LinShm {
-                handler: null_mut(),
-                shm_id: 0,
-            };
-            shm.open(name, size);
-            shm
-        }
-}
-
-pub fn abs_sema_create(name: &str) -> impl AbsSema {
-    #[cfg(target_os = "windows")]
-        {
-            let mut sema = WinSema {
-                handler: ptr::null_mut(),
-            };
-            sema.create(name);
-            sema
-        }
-
-    #[cfg(target_os = "linux")]
-        {
-            let mut sema = LinSema {
-                sem_id: 0,
-            };
-            sema.create(name);
-            sema
-        }
-}
-
-pub fn abs_sema_open(name: &str) -> impl AbsSema {
-    #[cfg(target_os = "windows")]
-        {
-            let mut sema = WinSema {
-                handler: ptr::null_mut(),
-            };
-            sema.open(name);
-            sema
-        }
-
-    #[cfg(target_os = "linux")]
-        {
-            let mut sema = LinSema {
-                sem_id: 0,
-            };
-            sema.open(name);
-            sema
-        }
-}

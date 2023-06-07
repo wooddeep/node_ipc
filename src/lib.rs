@@ -4,6 +4,7 @@ extern crate napi_derive;
 use std::any::Any;
 use std::collections::HashMap;
 use std::io::Error;
+use std::os::raw::c_void;
 use std::path::Path;
 use std::process;
 use std::ptr;
@@ -36,7 +37,6 @@ use winapi::um::winnt::HANDLE;
 use sb::Builder;
 
 use crate::ipc::AbsShm;
-use std::os::raw::c_void;
 
 mod ipc;
 mod sb;
@@ -146,7 +146,6 @@ pub async fn sem_require(name: String) -> i32 {
 
         let ret = match sem_map.as_ref().unwrap().get(&name) {
             Some(sem_info) => {
-                println!("## sem_require: sem_info.handler = {}", sem_info.handler);
                 ipc::sema_require(sem_info.handler);
                 0
             }
@@ -168,7 +167,6 @@ pub async fn sem_release(name: String) -> i32 {
 
         let ret = match sem_map.as_ref().unwrap().get(&name) {
             Some(sem_info) => {
-                println!("## sem_release: sem_info.handler = {}", sem_info.handler);
                 ipc::sema_release(sem_info.handler);
                 0
             }
@@ -298,15 +296,6 @@ pub async unsafe fn mq_create(topic: String) -> u32 {
     return index as u32;
 }
 
-
-/**
- * message queue between process map:
- * -------------------------------------
- * master  <- [worker0, worker1, worker2]
- * worker0 <- [master,  worker1, worker2]
- * worker1 <- [worker0, master,  worker2]
- * worker2 <- [worker0, worker1,  master]
- */
 #[napi(ts_args_type = "callback: (result: string) => void, index: Number")]
 pub unsafe fn mq_listen(callback: JsFunction, index: u32) -> Result<()> {
     let tsfn: ThreadsafeFunction<String, ErrorStrategy::Fatal> = callback

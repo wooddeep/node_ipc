@@ -16,16 +16,8 @@ export function shmReadBuf(name: string, offset: number, size: number): any | nu
 export function shmReadStr(name: string, offset: number, size: number): string | null
 export function shmWriteStr(name: string, offset: number, data: string): void
 export function mqCreate(topic: string): Promise<number>
-/**
- * message queue between process map:
- * -------------------------------------
- * master  <- [worker0, worker1, worker2]
- * worker0 <- [master,  worker1, worker2]
- * worker1 <- [worker0, master,  worker2]
- * worker2 <- [worker0, worker1,  master]
-*/
-export function listen(callback: (result: string) => void, index: Number): void
-export function establish(topic: string): Promise<number>
-export function publish(targetIndex: number, content: string): void
+export function mqListen(callback: (result: string) => void, index: Number): void
+export function mqEstablish(topic: string): Promise<number>
+export function mqPublish(targetIndex: number, content: string): void
 export function callNodeFunc(): Promise<number>
 export function init(): void
