@@ -22,7 +22,7 @@ async function main() {
         let mq_index = await backend.mqCreate("0");
         console.log(`mq create, index: ${mq_index}`);
 
-        backend.listen(async (data) => {
+        backend.mqListen(async (data) => {
             console.log(`##[master:${process.pid}] msg from other process; data.length = ${data.length}, data = ${data}, time = ${new Date()}`)
         }, mq_index);
 
@@ -45,11 +45,10 @@ async function main() {
 
     } else {
 
-        let sender_index = await backend.establish("0");
+        let sender_index = await backend.mqEstablish("0");
         setInterval(() => {
             let data = `msg form worker[${process.pid}]`
-            //console.log(`worker:[${process.pid}], sender index: ${sender_index}, send length: ${data.length}`);
-            backend.publish(sender_index, data);
+            backend.mqPublish(sender_index, data);
         }, 2000);
         //const emitter = new events.EventEmitter();
     }

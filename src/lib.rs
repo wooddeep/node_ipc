@@ -36,9 +36,11 @@ use winapi::um::winnt::HANDLE;
 use sb::Builder;
 
 use crate::ipc::AbsShm;
+use std::os::raw::c_void;
 
 mod ipc;
 mod sb;
+mod test;
 
 // https://docs.rs/interprocess/latest/interprocess/os/windows/named_pipe/enum.PipeDirection.html
 // https://tokio.rs/tokio/tutorial/channels
@@ -71,9 +73,9 @@ struct ShmInfo {
     address: LPVOID,
 
     #[cfg(target_os = "linux")]
-    address: *mut c_void,
-    #[cfg(target_os = "linux")]
     handler: i32,
+    #[cfg(target_os = "linux")]
+    address: *mut c_void,
 }
 
 static mut mq_tx_array: Vec<MQSender<String>> = Vec::new();
@@ -89,7 +91,6 @@ pub fn process_exit() {
 }
 
 #[napi]
-#[cfg(target_os = "windows")]
 pub fn sem_create(name: String) {
     unsafe {
         match sem_map.as_ref() {
@@ -109,7 +110,6 @@ pub fn sem_create(name: String) {
 }
 
 #[napi]
-#[cfg(target_os = "windows")]
 pub fn sem_open(name: String) {
     unsafe {
         match sem_map.as_ref().unwrap().get(&name) {
@@ -124,7 +124,6 @@ pub fn sem_open(name: String) {
 }
 
 #[napi]
-#[cfg(target_os = "windows")]
 pub fn sem_close(name: String) {
     unsafe {
         match sem_map.as_ref().unwrap().get(&name) {
@@ -137,11 +136,17 @@ pub fn sem_close(name: String) {
 }
 
 #[napi]
-#[cfg(target_os = "windows")]
 pub async fn sem_require(name: String) -> i32 {
     unsafe {
+
+        let ret = match sem_map.as_ref() {
+            Some(map) => {}
+            None => { sem_map = Some(HashMap::new()) }
+        };
+
         let ret = match sem_map.as_ref().unwrap().get(&name) {
             Some(sem_info) => {
+                println!("## sem_require: sem_info.handler = {}", sem_info.handler);
                 ipc::sema_require(sem_info.handler);
                 0
             }
@@ -154,11 +159,16 @@ pub async fn sem_require(name: String) -> i32 {
 }
 
 #[napi]
-#[cfg(target_os = "windows")]
 pub async fn sem_release(name: String) -> i32 {
     unsafe {
+        let ret = match sem_map.as_ref() {
+            Some(map) => {}
+            None => { sem_map = Some(HashMap::new()) }
+        };
+
         let ret = match sem_map.as_ref().unwrap().get(&name) {
             Some(sem_info) => {
+                println!("## sem_release: sem_info.handler = {}", sem_info.handler);
                 ipc::sema_release(sem_info.handler);
                 0
             }
@@ -172,7 +182,6 @@ pub async fn sem_release(name: String) -> i32 {
 
 // share memorey
 #[napi]
-#[cfg(target_os = "windows")]
 pub fn shm_create(name: String, size: u32) {
     unsafe {
         match shm_map.as_ref() {
@@ -192,7 +201,6 @@ pub fn shm_create(name: String, size: u32) {
 }
 
 #[napi]
-#[cfg(target_os = "windows")]
 pub fn shm_open(name: String, size: u32) {
     unsafe {
         match shm_map.as_ref() {
@@ -214,7 +222,6 @@ pub fn shm_open(name: String, size: u32) {
 }
 
 #[napi]
-#[cfg(target_os = "windows")]
 pub fn shm_close(name: String) {
     unsafe {
         match shm_map.as_ref().unwrap().get(&name) {
@@ -227,7 +234,6 @@ pub fn shm_close(name: String) {
 }
 
 #[napi]
-#[cfg(target_os = "windows")]
 pub fn shm_read_buf(name: String, offset: u32, size: u32) -> Option<&'static [u8]> {
     let ret = unsafe {
         match shm_map.as_ref().unwrap().get(&name) {
@@ -242,7 +248,6 @@ pub fn shm_read_buf(name: String, offset: u32, size: u32) -> Option<&'static [u8
 }
 
 #[napi]
-#[cfg(target_os = "windows")]
 pub fn shm_read_str(name: String, offset: u32, size: u32) -> Option<String> {
     let ret = unsafe {
         match shm_map.as_ref().unwrap().get(&name) {
@@ -257,7 +262,6 @@ pub fn shm_read_str(name: String, offset: u32, size: u32) -> Option<String> {
 }
 
 #[napi]
-#[cfg(target_os = "windows")]
 pub fn shm_write_str(name: String, offset: u32, data: String) {
     let ret = unsafe {
         match shm_map.as_ref().unwrap().get(&name) {
@@ -304,7 +308,7 @@ pub async unsafe fn mq_create(topic: String) -> u32 {
  * worker2 <- [worker0, worker1,  master]
  */
 #[napi(ts_args_type = "callback: (result: string) => void, index: Number")]
-pub unsafe fn listen(callback: JsFunction, index: u32) -> Result<()> {
+pub unsafe fn mq_listen(callback: JsFunction, index: u32) -> Result<()> {
     let tsfn: ThreadsafeFunction<String, ErrorStrategy::Fatal> = callback
         .create_threadsafe_function(0, |ctx: ThreadSafeCallContext<String>| {
             let data = ctx.env.create_string(ctx.value.as_str());
@@ -332,7 +336,7 @@ pub unsafe fn listen(callback: JsFunction, index: u32) -> Result<()> {
 
 #[napi]
 #[cfg(target_os = "windows")]
-pub async unsafe fn establish(topic: String) -> u32 {
+pub async unsafe fn mq_establish(topic: String) -> u32 {
     let notifier: (Sender<bool>, Receiver<bool>) = channel();
     task::spawn_blocking(move || {
         let (tx, rx): (Sender<String>, Receiver<String>) = channel();
@@ -357,20 +361,20 @@ pub async unsafe fn establish(topic: String) -> u32 {
 
 #[napi]
 #[cfg(target_os = "linux")]
-pub async unsafe fn establish(topic: String) -> u32 {
-    return 0;
+pub async unsafe fn mq_establish(topic: String) -> u32 {
+    return ipc::str_to_key(&topic) as u32;
 }
 
 #[napi]
 #[cfg(target_os = "windows")]
-pub unsafe fn publish(target_index: u32, content: String) {
+pub unsafe fn mq_publish(target_index: u32, content: String) {
     mq_tx_array.get(target_index as usize).as_ref().unwrap().sender.send(content);
 }
 
 #[napi]
 #[cfg(target_os = "linux")]
-pub unsafe fn publish(target_index: u32, content: String) {
-    ipc::mq_publish(target_index, content);
+pub unsafe fn mq_publish(key: u32, content: String) {
+    ipc::mq_publish(key, content);
 }
 
 #[napi]
@@ -391,6 +395,5 @@ pub fn init(mut env: Env) -> Result<()> {
     env.add_env_cleanup_hook(env, clearup);
     Ok(())
 }
-
 
 

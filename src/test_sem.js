@@ -7,6 +7,11 @@ const app = new Koa()
 let router = new Router()
 app.use(bodyParser())
 
+router.get('/create', async (ctx) => {
+    await backend.semCreate("test")
+    ctx.body = 'semCreate response'
+});
+
 router.get('/require', async (ctx) => {
     await backend.semRequire("test")
     ctx.body = 'semRequire response'
@@ -19,7 +24,6 @@ router.get('/release', async (ctx) => {
 
 app.use(router.routes()).use(router.allowedMethods())
 
-const child_proc_num = 3; // /*os.cpus().length*/
 
 process.on("SIGINT", () => {
     backend.processExit()
@@ -33,7 +37,6 @@ process.on("beforeExit", (code) => {
 
 async function main() {
 
-    await backend.semCreate("test");
     let port = Number.parseInt(process.argv[2]);
     port = port == undefined ? 3000 : port;
 

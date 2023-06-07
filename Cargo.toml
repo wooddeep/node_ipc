@@ -38,6 +38,7 @@ simplelog = "0.7"
 libc = "0.2"
 regex = "*"
 
+
 [build-dependencies]
 napi-build = "2.0.1"
 cc = "1.0"

@@ -67,6 +67,15 @@ use futures::StreamExt as _;
 use tokio::io::{split, AsyncReadExt, AsyncWriteExt};
 use parity_tokio_ipc::{Endpoint, SecurityAttributes};
 
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+
+pub fn str_to_key(s: &str) -> i32 {
+    let mut hasher = DefaultHasher::new();
+    s.hash(&mut hasher);
+    hasher.finish() as i32
+}
+
 #[cfg(target_os = "linux")]
 extern crate libc;
 
@@ -488,19 +497,19 @@ pub struct LinShm {
 #[cfg(target_os = "linux")]
 impl AbsShm for LinShm {
     fn create(&mut self, name: &str, size: u32) {
-        let start = shm_create(name, size);
+        let start = shm_create(size, String::from(name));
         self.handler = start.0;
         self.shm_id = start.1
     }
 
     fn open(&mut self, name: &str, size: u32) {
-        let start = shm_open(name, size);
+        let start = shm_open(size, String::from(name));
         self.handler = start.0;
         self.shm_id = start.1
     }
 
     fn close(&self) {
-        shm_clearup(self.shm_id);
+        shm_clearup((self.handler, self.shm_id));
     }
 
     fn read_buf(&self, offset: u32, size: u32) -> Option<&'static [u8]> {
@@ -563,12 +572,15 @@ fn name_to_key(name: &str) -> u32 {
 
 #[cfg(target_os = "linux")]
 pub fn sema_create(name: &str) -> i32 {
-    let key = name_to_key(name);
+    let key = str_to_key(name);
 
-    let sem_id = unsafe { semget(key as i32, 1, IPC_CREAT | IPC_EXCL | 0o666) };
+    let mut sem_id = unsafe { semget(key as i32, 1, IPC_CREAT | IPC_EXCL | 0o666) };
     if sem_id == -1 {
-        println!("[0] Failed to create semaphore: {}", std::io::Error::last_os_error());
-        return -1;
+        log::info!("[0] Failed to create semaphore: {}", std::io::Error::last_os_error());
+        let err = std::io::Error::last_os_error().raw_os_error().unwrap();
+        if err == 17 {
+            sem_id = unsafe { semget(key as i32, 1,  IPC_EXCL | 0o666) };
+        }
     }
     println!("Semaphore created successfully with id: {}", sem_id);
 
@@ -676,7 +688,7 @@ pub fn do_shm_read_str(map: *mut c_void, offset: u32, size: u32) -> String {
         let mut len = slice.len();
         for i in 0..slice.len() {
             if slice[i] == 0 {
-                len = i + 1;
+                len = i;
                 break;
             }
         }
@@ -688,7 +700,7 @@ pub fn do_shm_read_str(map: *mut c_void, offset: u32, size: u32) -> String {
 
 
 #[cfg(target_os = "linux")]
-pub fn shm_create(name: &str, size: u32) -> (*mut c_void, i32) {
+pub fn shm_create(size: u32, name: String) -> (*mut c_void, i32) {
     let shm_id = unsafe { shmget(123456, size as usize, IPC_CREAT | IPC_EXCL | 0o666) };
     if shm_id == -1 {
         eprintln!("[0] Failed to create shared memory: {}", std::io::Error::last_os_error());
@@ -702,12 +714,12 @@ pub fn shm_create(name: &str, size: u32) -> (*mut c_void, i32) {
 
 
 #[cfg(target_os = "linux")]
-pub fn shm_open(name: &str, size: u32) -> (*mut c_void, i32) {
-    let shm_id = unsafe { shmget(123456, 0, IPC_EXCL | 0o666 as i32) };
+pub fn shm_open(size: u32, name: String) -> (*mut c_void, i32) {
+    let mut shm_id = unsafe { shmget(123456, 0, IPC_EXCL | 0o666 as i32) };
 
     if shm_id == -1 {
-        eprintln!("[1] Failed to create shared memory: {}", std::io::Error::last_os_error());
-        return (null_mut(), 0);
+        log::info!("[1] Failed to open shared memory: {}", std::io::Error::last_os_error());
+        shm_id = unsafe { shmget(123456, size as usize, IPC_CREAT | IPC_EXCL | 0o666) };
     }
 
     let shmat_result = unsafe { shmat(shm_id, null_mut(), 0) };
@@ -716,8 +728,8 @@ pub fn shm_open(name: &str, size: u32) -> (*mut c_void, i32) {
 
 
 #[cfg(target_os = "linux")]
-pub fn shm_clearup(shm_id: i32) {
-    let ret = unsafe { shmctl(shm_id, IPC_RMID, 0 as *mut libc::shmid_ds) };
+pub fn shm_clearup(desc: (*mut c_void, i32)) {
+    let ret = unsafe { shmctl(desc.1, IPC_RMID, 0 as *mut libc::shmid_ds) };
     if ret == -1 {
         eprintln!("Failed to delete shared memory: {}", std::io::Error::last_os_error());
     }
@@ -727,18 +739,23 @@ pub fn shm_clearup(shm_id: i32) {
 //  linux message queue implement!!!
 ///////////////////////////////////////////////////////////////////////////
 #[cfg(target_os = "linux")]
-pub fn mq_server(own_id: u32, peer_id: u32, sender: Sender<String>) {
+pub fn mq_server(topic: String, sender: Sender<String>, notifier: Sender<bool>) {
     // create or get message queue
-    let msg_queue_id = unsafe { msgget(KEY + own_id as i32, 0o666 | libc::IPC_CREAT | libc::IPC_EXCL) };
+    let key = str_to_key(&topic);
+    let mut msg_queue_id = unsafe { msgget(key, 0o666 | libc::IPC_CREAT | libc::IPC_EXCL) };
+
     if msg_queue_id == -1 {
         let err = std::io::Error::last_os_error().raw_os_error().unwrap();
-        if err != 17 { // file existed
-            println!("Failed to create or get message queue");
-            println!("[0] Failed to create msgque: {}", std::io::Error::last_os_error());
+        log::info!("Failed to create or get message queue");
+        log::info!("[0] Failed to create msgque: {}", std::io::Error::last_os_error());
+
+        if err == 17 {
+            msg_queue_id = unsafe { msgget(key, 0) };
         }
-        return;
     }
 
+
+    notifier.send(true);
     // receive message
     let mut received_msg_buf = MsgBuf {
         mtype: 0,
@@ -775,10 +792,10 @@ pub fn mq_server(own_id: u32, peer_id: u32, sender: Sender<String>) {
 }
 
 #[cfg(target_os = "linux")]
-pub fn mq_publish(target_index: u32, content: String) {
+pub fn mq_publish(key: u32, content: String) {
     // create or get message queue
 
-    let msg_queue_id = unsafe { msgget(KEY + target_index as i32, 0o666) };
+    let msg_queue_id = unsafe { msgget(key as i32, 0o666) };
     if msg_queue_id == -1 {
         println!("[1] Failed to create or get message queue");
         return;
@@ -805,7 +822,7 @@ pub fn mq_publish(target_index: u32, content: String) {
             println!("Failed to send message");
             return;
         }
-        println!("publish to {} {}, ret: {}", target_index, &content, result);
+        //println!("publish to {} {}, ret: {}", key, &content, result);
     }
 }
 
