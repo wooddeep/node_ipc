@@ -87,7 +87,6 @@ curl "http://127.0.0.1:3001/release"
 // test_shm.js
 let backend = require("@wooddeep/node_ipc")
 const bodyParser = require('koa-bodyparser')
-const backend = require("../index.js")
 const Router = require('koa-router')
 const Koa = require('koa')
 
@@ -166,8 +165,6 @@ curl -v "http://127.0.0.1:3001/write?shm_name=rustMapping"
 // test_mq.js
 let backend = require("@wooddeep/node_ipc")
 const cluster = require("cluster")
-
-const backend = require("../index.js")
 const events = require("events")
 
 const child_proc_num = 3; // /*os.cpus().length*/

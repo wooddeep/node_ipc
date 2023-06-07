@@ -1,6 +1,6 @@
 {
   "name": "@wooddeep/node_ipc",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "main": "index.js",
   "bin": {
     "winaddon": "./node_ipc.win32-x64-msvc.node",
